@@ -1,0 +1,37 @@
+{
+  "name": "cf-notes",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit",
+    "deploy": "npm run db:migrations:apply && wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "test": "vitest",
+    "cf-typegen": "wrangler types",
+    "db:migrations:apply": "wrangler d1 migrations apply DB --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.5.2",
+    "vitest": "~3.2.0",
+    "wrangler": "^4.82.2"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "D1 database used to store encrypted private notes and auth rate-limit records."
+      },
+      "APP_PASSWORD": {
+        "description": "Default vault login password. Change it in production; the browser also uses it to unlock encrypted notes."
+      },
+      "COOKIE_SECRET": {
+        "description": "Long random secret used to sign the HttpOnly session cookie."
+      },
+      "APP_PASSWORDS": {
+        "description": "Optional extra isolated vault passwords. Format: vault_id=password,guest=another-password."
+      }
+    }
+  }
+}
