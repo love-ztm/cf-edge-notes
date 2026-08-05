@@ -98,32 +98,143 @@ export const blogHomeHtml = `<!doctype html>
       }
       .login-wrap {
         position: fixed; inset: 0; z-index: 100;
-        display: grid; place-items: center;
+        display: flex; flex-direction: column;
         min-height: 100vh;
-        padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-        background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.14), transparent 34%), rgba(245, 245, 245, 0.88);
-        backdrop-filter: blur(18px);
+        background: #0a0a0a;
+        overflow: hidden;
       }
-      [data-theme="dark"] .login-wrap { background: radial-gradient(circle at 50% 0%, rgba(124,147,255,0.2), transparent 34%), rgba(9,17,31,0.88); }
-      .login-card { width: min(420px, 100%); padding: 28px; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16); }
-      .app-dimmed { filter: blur(1px); pointer-events: none; user-select: none; }
-      .login-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
-      .login-brand-icon {
-        width: 48px; height: 48px; border-radius: 16px;
-        display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        color: white; font-size: 22px;
-        box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+      .login-wrap::before {
+        content: '';
+        position: absolute; inset: 0;
+        background:
+          linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+        background-size: 60px 60px;
+        pointer-events: none;
       }
-      .login-mini { color: var(--muted); font-size: 12px; }
-      .login-title { margin: 2px 0 0; font-size: 26px; line-height: 1.2; }
-      .login-desc { margin: 8px 0 18px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+      .login-wrap::after {
+        content: '';
+        position: absolute;
+        top: -200px; left: 50%; transform: translateX(-50%);
+        width: 800px; height: 500px;
+        background: radial-gradient(ellipse, rgba(99,102,241,0.08) 0%, transparent 70%);
+        pointer-events: none;
+        animation: loginGlow 6s ease-in-out infinite alternate;
+      }
+      @keyframes loginGlow {
+        0% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+        100% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+      }
+      .login-topbar {
+        position: relative; z-index: 2;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 40px;
+      }
+      .login-brand {
+        display: flex; align-items: center; gap: 10px;
+        color: #fff; font-weight: 700; font-size: 16px;
+        letter-spacing: -0.3px;
+      }
+      .login-brand svg { width: 28px; height: 28px; }
+      .login-console-btn {
+        padding: 8px 20px; border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: transparent; color: #fff;
+        font-size: 13px; font-weight: 500;
+        cursor: pointer; transition: all 0.2s;
+      }
+      .login-console-btn:hover {
+        background: rgba(255,255,255,0.08);
+        border-color: rgba(255,255,255,0.3);
+      }
+      .login-content {
+        position: relative; z-index: 2;
+        flex: 1; display: flex; flex-direction: column; justify-content: center;
+        padding: 0 40px; max-width: 640px;
+      }
+      .login-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 16px; border-radius: 999px;
+        border: 1px solid rgba(99,102,241,0.3);
+        background: rgba(99,102,241,0.08);
+        color: #818cf8; font-size: 13px; font-weight: 500;
+        margin-bottom: 28px; width: fit-content;
+      }
+      .login-badge-dot {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: #6366f1;
+        animation: badgePulse 2s ease-in-out infinite;
+      }
+      @keyframes badgePulse {
+        0%, 100% { opacity: 0.5; } 50% { opacity: 1; }
+      }
+      .login-title {
+        margin: 0 0 8px; font-size: 56px; font-weight: 800;
+        color: #fff; letter-spacing: -1.5px; line-height: 1.1;
+      }
+      .login-subtitle {
+        margin: 0 0 16px; font-size: 22px; font-weight: 600;
+        color: rgba(255,255,255,0.9); letter-spacing: -0.3px;
+      }
+      .login-desc {
+        margin: 0 0 36px; color: rgba(255,255,255,0.45);
+        font-size: 15px; line-height: 1.7; max-width: 480px;
+      }
+      .login-form { display: flex; flex-direction: column; gap: 16px; max-width: 380px; }
+      .login-input-wrap { position: relative; }
+      .login-input-wrap .input {
+        width: 100%; padding: 14px 18px; border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.05);
+        color: #fff; font-size: 15px;
+        outline: none; transition: all 0.2s;
+      }
+      .login-input-wrap .input::placeholder { color: rgba(255,255,255,0.3); }
+      .login-input-wrap .input:focus {
+        border-color: rgba(99,102,241,0.5);
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+        background: rgba(255,255,255,0.07);
+      }
+      .login-input-icon {
+        position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+        color: rgba(255,255,255,0.3); font-size: 16px; pointer-events: none;
+      }
+      .login-input-wrap .input { padding-left: 44px; }
+      .login-btn {
+        width: 100%; padding: 14px 24px; border-radius: 10px;
+        border: 1px solid rgba(99,102,241,0.4);
+        background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(79,70,229,0.15));
+        color: #fff; font-size: 15px; font-weight: 600;
+        cursor: pointer; transition: all 0.25s;
+        position: relative; overflow: hidden;
+      }
+      .login-btn::before {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(99,102,241,0.3), rgba(79,70,229,0.3));
+        opacity: 0; transition: opacity 0.25s;
+      }
+      .login-btn:hover::before { opacity: 1; }
+      .login-btn:hover {
+        border-color: rgba(99,102,241,0.6);
+        box-shadow: 0 0 30px rgba(99,102,241,0.15);
+        transform: translateY(-1px);
+      }
+      .login-btn:active { transform: scale(0.98); }
+      .login-btn span { position: relative; z-index: 1; }
       .unlock-badge {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 5px 12px; border-radius: 999px;
-        background: rgba(99,102,241,0.1); color: var(--accent);
+        background: rgba(99,102,241,0.1); color: #818cf8;
         font-size: 12px; font-weight: 600; margin-bottom: 12px;
         border: 1px solid rgba(99,102,241,0.2);
+      }
+      .app-dimmed { filter: blur(1px); pointer-events: none; user-select: none; }
+      @media (max-width: 640px) {
+        .login-topbar { padding: 16px 20px; }
+        .login-content { padding: 0 20px; }
+        .login-title { font-size: 36px; }
+        .login-subtitle { font-size: 18px; }
+        .login-desc { font-size: 14px; }
       }
       .field-stack { margin-bottom: 12px; }
       .field-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
@@ -301,23 +412,36 @@ export const blogHomeHtml = `<!doctype html>
   <body>
     <div class="page">
       <section id="loginView" class="login-wrap hidden">
-        <div class="card login-card">
+        <div class="login-topbar">
           <div class="login-brand">
-            <div class="login-brand-icon">💎</div>
-            <div>
-              <div class="login-mini">Edge Notes · E2EE</div>
-            </div>
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M32 4L58 32L32 60L6 32Z" fill="#6366f1"/>
+              <path d="M32 4L58 32L32 34Z" fill="#818cf8"/>
+              <path d="M32 4L6 32L32 34Z" fill="#4f46e5"/>
+            </svg>
+            Edge Notes
           </div>
           <div id="unlockBadge" class="unlock-badge hidden">🔒 已通过访问验证</div>
-          <h1 id="loginTitle" class="login-title">登录到我的笔记</h1>
-          <p id="loginDesc" class="login-desc">输入密码后即可进入应用，并在本地解锁你的加密笔记。</p>
-          <div class="field-stack">
-            <label class="field-label" for="passwordInput">密码</label>
-            <input id="passwordInput" class="input" type="password" placeholder="输入访问密码" />
+        </div>
+        <div class="login-content">
+          <div class="login-badge">
+            <div class="login-badge-dot"></div>
+            End-to-End Encrypted
           </div>
-          <div id="passwordHelp" class="muted" style="margin-bottom:14px; font-size:12px;">同一个密码同时用于访问站点和本地解密。</div>
-          <button id="loginBtn" class="btn" style="width:100%">进入笔记</button>
-          <div id="loginStatus" class="muted" style="margin-top:10px; text-align:center;"></div>
+          <h1 class="login-title">Edge Notes</h1>
+          <div class="login-subtitle">端到端加密私人笔记</div>
+          <p class="login-desc">在浏览器本地加密后上传，服务端只存储密文。输入密码即可进入你的私密笔记空间。</p>
+          <div class="login-form">
+            <h1 id="loginTitle" class="login-title" style="display:none"></h1>
+            <p id="loginDesc" class="login-desc" style="display:none"></p>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">🔑</span>
+              <input id="passwordInput" class="input" type="password" placeholder="输入访问密码" />
+            </div>
+            <button id="loginBtn" class="login-btn"><span>进入笔记</span></button>
+            <div id="passwordHelp" style="color:rgba(255,255,255,0.3); font-size:12px; text-align:center;">同一个密码同时用于访问站点和本地解密</div>
+            <div id="loginStatus" style="color:rgba(255,255,255,0.5); font-size:13px; text-align:center;"></div>
+          </div>
         </div>
       </section>
 
@@ -562,19 +686,22 @@ export const blogHomeHtml = `<!doctype html>
         els.unlockBadge.classList.toggle('hidden', !unlockOnly);
         els.passwordInput.disabled = checking;
         els.loginBtn.disabled = checking;
+        const showDyn = checking || unlockOnly;
+        els.loginTitle.style.display = showDyn ? '' : 'none';
+        els.loginDesc.style.display = showDyn ? '' : 'none';
         if (checking) {
           els.loginTitle.textContent = '正在打开我的笔记';
           els.loginDesc.textContent = '正在检查当前设备的访问状态…';
           els.passwordInput.placeholder = '请稍候…';
-          els.loginBtn.textContent = '请稍候…';
+          els.loginBtn.querySelector('span').textContent = '请稍候…';
           return;
         }
         els.loginTitle.textContent = unlockOnly ? '解锁我的笔记' : '登录到我的笔记';
         els.loginDesc.textContent = unlockOnly
-          ? '你已经通过访问验证。现在输入密码解锁本地加密内容。'
+          ? '你已经通过访问验证。输入密码解锁本地加密内容。'
           : '输入密码后即可进入应用，并在本地解锁你的加密笔记。';
         els.passwordInput.placeholder = unlockOnly ? '输入解锁密码' : '输入访问密码';
-        els.loginBtn.textContent = unlockOnly ? '解锁我的笔记' : '进入笔记';
+        els.loginBtn.querySelector('span').textContent = unlockOnly ? '解锁我的笔记' : '进入笔记';
       }
 
       function updateVaultUi() {
