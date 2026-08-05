@@ -550,8 +550,8 @@ export const blogHomeHtml = `<!doctype html>
         </section>
 
         <!-- Import Preview Modal -->
-        <div id="importModal" class="modal-overlay hidden">
-          <div class="modal import-dialog">
+        <div id="importModal" class="modal-backdrop hidden">
+          <div class="card import-dialog">
             <div class="section-head">
               <h2 class="section-title">导入预览</h2>
               <button id="closeImportModalBtn" class="btn secondary small">取消</button>
