@@ -428,7 +428,7 @@ export const blogHomeHtml = `<!doctype html>
         font-size: 13px; font-weight: 600; transition: .2s; user-select: none;
       }
       .day-chip input { display: none; }
-      .day-chip:has(input:checked) {
+      .day-chip.active {
         background: var(--primary); color: #fff; border-color: var(--primary);
       }
       .toggle-label { font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -1688,8 +1688,13 @@ export const blogHomeHtml = `<!doctype html>
 
       function setSelectedDays(days) {
         if (!els.autoBackupDays) return;
-        var checks = els.autoBackupDays.querySelectorAll('input[type=checkbox]');
-        checks.forEach(function (c) { c.checked = days.indexOf(parseInt(c.value)) >= 0; });
+        var chips = els.autoBackupDays.querySelectorAll('.day-chip');
+        chips.forEach(function (chip) {
+          var c = chip.querySelector('input');
+          var active = days.indexOf(parseInt(c.value)) >= 0;
+          c.checked = active;
+          chip.classList.toggle('active', active);
+        });
       }
 
       function backupDateStr(d) {
@@ -2102,7 +2107,12 @@ export const blogHomeHtml = `<!doctype html>
       els.autoBackupTime.onchange = saveAbConfigFromUI;
       els.autoBackupKeep.onchange = saveAbConfigFromUI;
       // Delegate day chip clicks
-      els.autoBackupDays.addEventListener('change', saveAbConfigFromUI);
+      els.autoBackupDays.addEventListener('change', function (e) {
+        if (e.target.tagName === 'INPUT') {
+          e.target.closest('.day-chip').classList.toggle('active', e.target.checked);
+        }
+        saveAbConfigFromUI();
+      });
 
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
