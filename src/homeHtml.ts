@@ -412,7 +412,9 @@ export const blogHomeHtml = `<!doctype html>
       }
       .toggle input:checked + .toggle-slider { background: var(--primary); }
       .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
-      .settings-field > .toggle { margin-top: 2px; }
+      .toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+      .toggle-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+      .toggle-label.on { color: var(--primary); }
 
       /* Share dialog */
       .share-dialog { padding: 24px; width: min(480px, 100%); }
@@ -575,10 +577,13 @@ export const blogHomeHtml = `<!doctype html>
             <div class="settings-field-row">
               <div class="settings-field" style="flex:1">
                 <label>启用自动备份</label>
-                <label class="toggle">
-                  <input id="autoBackupToggle" type="checkbox" />
-                  <span class="toggle-slider"></span>
-                </label>
+                <div class="toggle-row">
+                  <label class="toggle">
+                    <input id="autoBackupToggle" type="checkbox" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span id="autoBackupLabel" class="toggle-label">关</span>
+                </div>
               </div>
               <div class="settings-field" style="flex:2">
                 <label>备份间隔</label>
@@ -786,7 +791,8 @@ export const blogHomeHtml = `<!doctype html>
         exportMdBtn: document.getElementById('exportMdBtn'),
         autoBackupToggle: document.getElementById('autoBackupToggle'),
         autoBackupInterval: document.getElementById('autoBackupInterval'),
-        autoBackupInfo: document.getElementById('autoBackupInfo')
+        autoBackupInfo: document.getElementById('autoBackupInfo'),
+        autoBackupLabel: document.getElementById('autoBackupLabel')
       };
 
       // ─── Theme ────────────────────────────
@@ -1641,6 +1647,11 @@ export const blogHomeHtml = `<!doctype html>
         const cfg = getAutoBackupConfig();
         const el = document.getElementById('autoBackupInfo');
         if (!el) return;
+        // Update on/off label
+        if (els.autoBackupLabel) {
+          els.autoBackupLabel.textContent = cfg.enabled ? '开' : '关';
+          els.autoBackupLabel.className = 'toggle-label' + (cfg.enabled ? ' on' : '');
+        }
         if (!cfg.enabled) { el.textContent = '定时备份已关闭'; return; }
         const last = cfg.lastBackup;
         el.textContent = '上次自动备份: ' + (last ? new Date(last).toLocaleString('zh-CN') : '尚未备份') +
