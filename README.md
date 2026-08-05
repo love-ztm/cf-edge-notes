@@ -34,7 +34,14 @@
 ### 导出
 - 单条笔记导出为 Markdown
 - 全部笔记导出为 JSON 或 Markdown
-- 一键备份所有数据
+
+### WebDAV 备份与恢复
+- 一键备份所有数据到 WebDAV 服务器
+- 从 WebDAV 恢复备份数据
+- 支持本地文件导入
+- 定时自动备份，可设置备份间隔（1h / 6h / 12h / 24h）
+- 备份文件按日期命名，支持保留份数设置
+- 从 WebDAV 浏览和选择历史备份恢复
 
 ### 回收站
 - 删除的笔记进入回收站，可随时恢复
@@ -48,7 +55,7 @@
 
 ## 一键部署
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/love-ztm/cf-notes)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/love-ztm/cf-edge-notes)
 
 Cloudflare 会自动创建 D1 数据库并部署 Worker。部署后需要在 Workers 设置中添加 R2 Bucket 绑定（binding 名称：`IMAGES`）。
 
@@ -112,7 +119,7 @@ npm run deploy
 ## GitHub 自动部署
 
 1. 打开 Cloudflare Dashboard → **Workers & Pages**
-2. 连接 GitHub 仓库 `love-ztm/cf-notes`
+2. 连接 GitHub 仓库 `love-ztm/cf-edge-notes`
 3. 开启 Workers Builds
 
 以后 `git push` 到 main 分支会自动部署。
@@ -140,7 +147,7 @@ npx wrangler dev
 ## 项目结构
 
 ```text
-cf-notes/
+cf-edge-notes/
 ├── src/
 │   ├── index.ts          # Worker 入口 / API 路由 / 分享页面
 │   ├── homeHtml.ts       # 前端单页应用（HTML + CSS + JS）
