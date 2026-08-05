@@ -4,13 +4,13 @@ export const blogHomeHtml = `<!doctype html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Edge Notes</title>
-    <meta name="theme-color" content="#07c160" />
+    <meta name="theme-color" content="#6366f1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="我的笔记" />
     <meta name="description" content="一个部署在 Cloudflare Workers 上的简洁私人笔记。" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='6' width='48' height='52' rx='10' fill='%2307c160'/%3E%3Cpath d='M20 22h24M20 32h24M20 42h16' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4L58 32L32 60L6 32Z' fill='%236366f1'/%3E%3Cpath d='M32 4L58 32L32 34Z' fill='%23818cf8'/%3E%3Cpath d='M32 4L6 32L32 34Z' fill='%234f46e5'/%3E%3C/svg%3E" />
     <style>
       :root, [data-theme="light"] {
         color-scheme: light;
@@ -19,18 +19,18 @@ export const blogHomeHtml = `<!doctype html>
         --panel-border: #e5e7eb;
         --text: #111827;
         --muted: #6b7280;
-        --accent: #07c160;
-        --accent-2: #06ad56;
+        --accent: #6366f1;
+        --accent-2: #4f46e5;
         --danger: #ef4444;
         --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
         --card-bg: rgba(255,255,255,0.05);
-        --tag-bg: #e8f5e9;
-        --tag-text: #2e7d32;
+        --tag-bg: #eef2ff;
+        --tag-text: #4338ca;
         --pin-bg: #fff3e0;
         --pin-border: #ffe0b2;
         --trash-bg: #ffebee;
         --input-bg: #fff;
-        --highlight-bg: rgba(7,193,96,0.08);
+        --highlight-bg: rgba(99,102,241,0.08);
       }
       [data-theme="dark"] {
         color-scheme: dark;
@@ -101,7 +101,7 @@ export const blogHomeHtml = `<!doctype html>
         display: grid; place-items: center;
         min-height: 100vh;
         padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-        background: radial-gradient(circle at 50% 0%, rgba(7, 193, 96, 0.14), transparent 34%), rgba(245, 245, 245, 0.88);
+        background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.14), transparent 34%), rgba(245, 245, 245, 0.88);
         backdrop-filter: blur(18px);
       }
       [data-theme="dark"] .login-wrap { background: radial-gradient(circle at 50% 0%, rgba(124,147,255,0.2), transparent 34%), rgba(9,17,31,0.88); }
@@ -113,7 +113,7 @@ export const blogHomeHtml = `<!doctype html>
         display: flex; align-items: center; justify-content: center;
         background: linear-gradient(135deg, var(--accent), var(--accent-2));
         color: white; font-size: 22px;
-        box-shadow: 0 10px 24px rgba(7, 193, 96, 0.18);
+        box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
       }
       .login-mini { color: var(--muted); font-size: 12px; }
       .login-title { margin: 2px 0 0; font-size: 26px; line-height: 1.2; }
@@ -121,9 +121,9 @@ export const blogHomeHtml = `<!doctype html>
       .unlock-badge {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 5px 12px; border-radius: 999px;
-        background: rgba(7,193,96,0.1); color: var(--accent);
+        background: rgba(99,102,241,0.1); color: var(--accent);
         font-size: 12px; font-weight: 600; margin-bottom: 12px;
-        border: 1px solid rgba(7,193,96,0.2);
+        border: 1px solid rgba(99,102,241,0.2);
       }
       .field-stack { margin-bottom: 12px; }
       .field-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
@@ -145,9 +145,9 @@ export const blogHomeHtml = `<!doctype html>
         padding: 9px 16px; border-radius: 12px; border: none; cursor: pointer;
         font-weight: 600; font-size: 13px; transition: all 0.2s;
         background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        color: #fff; box-shadow: 0 4px 12px rgba(7,193,96,0.2);
+        color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,0.2);
       }
-      .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(7,193,96,0.3); }
+      .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(99,102,241,0.3); }
       .btn:active { transform: scale(0.97); }
       .btn.secondary { background: var(--card-bg); color: var(--text); box-shadow: none; border: 1px solid var(--panel-border); }
       .btn.secondary:hover { background: var(--highlight-bg); }
@@ -303,7 +303,7 @@ export const blogHomeHtml = `<!doctype html>
       <section id="loginView" class="login-wrap hidden">
         <div class="card login-card">
           <div class="login-brand">
-            <div class="login-brand-icon">📝</div>
+            <div class="login-brand-icon">💎</div>
             <div>
               <div class="login-mini">Edge Notes · E2EE</div>
             </div>
@@ -347,7 +347,7 @@ export const blogHomeHtml = `<!doctype html>
           <div id="tagList" class="tag-list"></div>
           <div class="tag-add-row">
             <input id="newTagInput" class="input" placeholder="新标签名…" />
-            <input id="newTagColor" type="color" class="tag-color-input" value="#07c160" />
+            <input id="newTagColor" type="color" class="tag-color-input" value="#6366f1" />
             <button id="addTagBtn" class="btn small">添加</button>
           </div>
         </section>

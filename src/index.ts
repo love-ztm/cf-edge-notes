@@ -186,7 +186,7 @@ async function ensureNotesSchema(env: AppEnv) {
 	// Ensure tags tables
 	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS tags (
 		id TEXT PRIMARY KEY, vault_id TEXT NOT NULL DEFAULT 'default',
-		name TEXT NOT NULL, color TEXT DEFAULT '#07c160', created_at INTEGER NOT NULL
+		name TEXT NOT NULL, color TEXT DEFAULT '#6366f1', created_at INTEGER NOT NULL
 	)`).run();
 	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tags_vault ON tags(vault_id)`).run();
 	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_tags (
@@ -242,8 +242,9 @@ async function getOrCreateVaultSalt(env: AppEnv, vaultId: string) {
 // ─── Static Assets ────────────────────────────────────────
 
 const appIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect x="8" y="6" width="48" height="52" rx="10" fill="#07c160"/>
-  <path d="M20 22h24M20 32h24M20 42h16" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <path d="M32 4L58 32L32 60L6 32Z" fill="#6366f1"/>
+  <path d="M32 4L58 32L32 34Z" fill="#818cf8"/>
+  <path d="M32 4L6 32L32 34Z" fill="#4f46e5"/>
 </svg>`;
 
 const manifestJson = JSON.stringify({
@@ -254,7 +255,7 @@ const manifestJson = JSON.stringify({
 	scope: '/',
 	display: 'standalone',
 	background_color: '#f5f5f5',
-	theme_color: '#07c160',
+	theme_color: '#6366f1',
 	icons: [{ src: '/app-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
 });
 
@@ -280,15 +281,15 @@ function sharePageHtml(title: string, content: string, createdAt: number, update
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>${safeTitle} - Edge Notes</title>
-<meta name="theme-color" content="#07c160"/>
+<meta name="theme-color" content="#6366f1"/>
 <style>
-:root { color-scheme: light; --bg:#f5f5f5; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280; --accent:#07c160; --shadow:0 8px 24px rgba(15,23,42,.06); }
+:root { color-scheme: light; --bg:#f5f5f5; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280; --accent:#6366f1; --shadow:0 8px 24px rgba(15,23,42,.06); }
 *{box-sizing:border-box}
 body{margin:0;color:var(--text);font:15px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased}
 .page{max-width:720px;margin:0 auto;padding:24px 16px}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:28px}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:20px;color:var(--muted);font-size:13px}
-.brand-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#06ad56);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+.brand-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#4f46e5);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
 h1{margin:0 0 8px;font-size:26px;line-height:1.2}
 .meta{display:flex;gap:16px;color:var(--muted);font-size:13px;margin-bottom:20px;flex-wrap:wrap}
 .content{line-height:1.8;white-space:pre-wrap;word-break:break-word}
@@ -300,7 +301,7 @@ h1{margin:0 0 8px;font-size:26px;line-height:1.2}
 </head>
 <body>
 <div class="page">
-<div class="brand"><div class="brand-icon">📝</div>Edge Notes</div>
+<div class="brand"><div class="brand-icon">💎</div>Edge Notes</div>
 <div class="card">
 <h1>${safeTitle}</h1>
 <div class="meta">
@@ -571,7 +572,7 @@ export default {
 			const body = (await request.json().catch(() => null)) as { name?: string; color?: string } | null;
 			const name = body?.name?.trim();
 			if (!name) return json({ ok: false, error: 'name required' }, 400);
-			const color = body?.color || '#07c160';
+			const color = body?.color || '#6366f1';
 			const id = crypto.randomUUID();
 			await env.DB.prepare(`INSERT INTO tags (id, vault_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)`).bind(id, vaultId, name, color, Date.now()).run();
 			return json({ ok: true, tag: { id, vault_id: vaultId, name, color, created_at: Date.now() } }, 201);
