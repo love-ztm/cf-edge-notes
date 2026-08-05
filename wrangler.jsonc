@@ -1,6 +1,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "cf-notes",
+	"account_id": "d24927a15fd8d5891ef848cf3a74fa3c",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-04-14",
 	"compatibility_flags": [
