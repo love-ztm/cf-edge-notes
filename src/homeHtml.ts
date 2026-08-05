@@ -500,7 +500,7 @@ export const blogHomeHtml = `<!doctype html>
             <div class="login-subtitle">端到端加密私人笔记</div>
             <p class="login-desc">在浏览器本地加密后上传，服务端只存储密文。输入密码即可进入你的私密笔记空间。</p>
           </div>
-          <!-- Dynamic content (shown on unlock/checking) -->
+          <!-- Checking state content (shown briefly on page load) -->
           <h1 id="loginTitle" class="login-title" style="display:none"></h1>
           <p id="loginDesc" class="login-desc" style="display:none"></p>
           <div class="login-form">
@@ -885,11 +885,11 @@ export const blogHomeHtml = `<!doctype html>
         els.unlockBadge.classList.toggle('hidden', !unlockOnly);
         els.passwordInput.disabled = checking;
         els.loginBtn.disabled = checking;
-        const showDyn = checking || unlockOnly;
-        // Hide static content when showing dynamic content
-        els.loginStaticContent.style.display = showDyn ? 'none' : '';
-        els.loginTitle.style.display = showDyn ? '' : 'none';
-        els.loginDesc.style.display = showDyn ? '' : 'none';
+        // Show static content (badge, title, subtitle, desc) in login and unlock states
+        els.loginStaticContent.style.display = checking ? 'none' : '';
+        // Show dynamic content only during checking state
+        els.loginTitle.style.display = checking ? '' : 'none';
+        els.loginDesc.style.display = checking ? '' : 'none';
         if (checking) {
           els.loginTitle.textContent = '正在打开我的笔记';
           els.loginDesc.textContent = '正在检查当前设备的访问状态…';
@@ -897,10 +897,6 @@ export const blogHomeHtml = `<!doctype html>
           els.loginBtn.querySelector('span').textContent = '请稍候…';
           return;
         }
-        els.loginTitle.textContent = unlockOnly ? '解锁我的笔记' : '登录到我的笔记';
-        els.loginDesc.textContent = unlockOnly
-          ? '你已经通过访问验证。输入密码解锁本地加密内容。'
-          : '输入密码后即可进入应用，并在本地解锁你的加密笔记。';
         els.passwordInput.placeholder = unlockOnly ? '输入解锁密码' : '输入访问密码';
         els.loginBtn.querySelector('span').textContent = unlockOnly ? '解锁我的笔记' : '进入笔记';
       }
