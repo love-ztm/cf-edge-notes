@@ -96,7 +96,146 @@ export const blogHomeHtml = `<!doctype html>
       }
       button, input, textarea { font: inherit; }
       .hidden { display: none !important; }
-      .page { max-width: 920px; margin: 0 auto; padding: 16px; }
+      .app-shell { display: flex; height: 100vh; overflow: hidden; max-width: none; padding: 0; margin: 0; }
+
+      /* ─── Sidebar ─────────────────────── */
+      .sidebar {
+        width: 220px; min-width: 220px; height: 100vh;
+        display: flex; flex-direction: column;
+        background: var(--panel);
+        border-right: 1px solid var(--panel-border);
+        overflow-y: auto;
+      }
+      .sidebar-brand {
+        padding: 20px 18px 16px;
+        display: flex; align-items: center; gap: 10px;
+        font-size: 17px; font-weight: 800; letter-spacing: -0.5px;
+        color: var(--text);
+        border-bottom: 1px solid var(--panel-border);
+      }
+      .sidebar-brand svg { width: 24px; height: 24px; flex-shrink: 0; }
+      .sidebar-nav { padding: 10px 8px; flex: 1; }
+      .sidebar-section-title {
+        font-size: 11px; font-weight: 700; color: var(--muted);
+        text-transform: uppercase; letter-spacing: 0.8px;
+        padding: 12px 10px 6px;
+      }
+      .sidebar-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 12px; border-radius: 8px;
+        color: var(--text); font-size: 13px; font-weight: 500;
+        cursor: pointer; transition: all 0.15s;
+        text-decoration: none; border: none; background: none; width: 100%;
+        text-align: left;
+      }
+      .sidebar-item:hover { background: var(--highlight-bg); }
+      .sidebar-item.active {
+        background: var(--highlight-bg);
+        color: var(--primary); font-weight: 600;
+        box-shadow: inset 3px 0 0 var(--primary);
+      }
+      .sidebar-item .icon { width: 18px; text-align: center; font-size: 14px; }
+      .sidebar-tags {
+        padding: 0 8px 8px;
+        border-top: 1px solid var(--panel-border);
+      }
+      .sidebar-tag-list { display: flex; flex-direction: column; gap: 2px; }
+      .sidebar-tag-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 12px; border-radius: 8px;
+        font-size: 13px; cursor: pointer; transition: all 0.15s;
+        color: var(--text);
+      }
+      .sidebar-tag-item:hover { background: var(--highlight-bg); }
+      .sidebar-tag-item.active { background: var(--highlight-bg); color: var(--primary); font-weight: 600; }
+      .sidebar-tag-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .sidebar-footer {
+        padding: 10px 8px;
+        border-top: 1px solid var(--panel-border);
+      }
+      .sidebar-tag-add {
+        display: flex; gap: 4px; padding: 4px 8px;
+      }
+      .sidebar-tag-add .input { flex: 1; padding: 5px 8px; font-size: 12px; border-radius: 6px; }
+      .sidebar-tag-add .btn { padding: 5px 8px; font-size: 11px; border-radius: 6px; }
+
+      /* ─── Main Content ────────────────── */
+      .main-content {
+        flex: 1; display: flex; flex-direction: column;
+        height: 100vh; overflow: hidden;
+        background: var(--bg);
+        position: relative;
+      }
+      .content-header {
+        display: flex; align-items: center; gap: 10px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--panel-border);
+        background: var(--bg);
+        flex-shrink: 0;
+      }
+      .content-header .search-box { flex: 1; max-width: 360px; }
+      .content-header .search-box .input { padding: 9px 14px; border-radius: 10px; }
+      .content-body {
+        flex: 1; overflow-y: auto; padding: 16px 20px;
+      }
+      .feed { padding: 0; }
+      .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+      .section-title { margin: 0; font-size: 16px; font-weight: 700; }
+      .section-desc { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
+      /* ─── Editor Panel ────────────────── */
+      .editor-panel {
+        position: absolute; top: 0; right: 0; bottom: 0;
+        width: 480px; max-width: 100%;
+        background: var(--panel);
+        border-left: 1px solid var(--panel-border);
+        display: flex; flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 25;
+        box-shadow: -8px 0 30px rgba(0,0,0,0.08);
+      }
+      .editor-panel.open { transform: translateX(0); }
+      .editor-head {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--panel-border);
+        flex-shrink: 0;
+      }
+      .editor-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+      .editor-head .section-desc { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+      .btn-icon {
+        background: none; border: none; cursor: pointer;
+        font-size: 18px; color: var(--muted); padding: 4px 8px;
+        border-radius: 6px; transition: all 0.15s;
+      }
+      .btn-icon:hover { background: var(--highlight-bg); color: var(--text); }
+      .editor-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+      .editor-title-input {
+        width: 100%; padding: 8px 0; border: none; border-bottom: 2px solid var(--panel-border);
+        background: transparent; color: var(--text);
+        font-size: 20px; font-weight: 700; outline: none;
+        transition: border-color 0.2s;
+      }
+      .editor-title-input:focus { border-bottom-color: var(--primary); }
+      .editor-title-input::placeholder { color: var(--muted); opacity: 0.5; }
+      .editor-toolbar {
+        display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+      }
+      .editor-textarea {
+        flex: 1; min-height: 200px; width: 100%;
+        padding: 12px 0; border: none; background: transparent;
+        color: var(--text); font-size: 14px; line-height: 1.7;
+        outline: none; resize: none;
+      }
+      .editor-textarea::placeholder { color: var(--muted); opacity: 0.5; }
+      .editor-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+      .editor-actions {
+        display: flex; gap: 8px; justify-content: flex-end;
+        padding: 14px 20px;
+        border-top: 1px solid var(--panel-border);
+        flex-shrink: 0;
+      }
       .card {
         background: var(--panel);
         border: 1px solid var(--panel-border);
@@ -276,14 +415,7 @@ export const blogHomeHtml = `<!doctype html>
       .btn.danger:hover { background: rgba(239,68,68,0.2); }
       .btn.small { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
       .btn.icon-btn { padding: 6px 8px; font-size: 16px; min-width: 32px; }
-      .topbar {
-        position: sticky; top: 0; z-index: 20;
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        padding: 14px 0; margin-bottom: 8px;
-        background: var(--bg); transition: opacity 0.2s;
-      }
-      .topbar-title { font-size: 20px; font-weight: 700; }
-      .topbar-sub { font-size: 12px; color: var(--muted); }
+      .content-header .new-btn { flex-shrink: 0; }
       .search-box { position: relative; flex: 1; min-width: 160px; max-width: 320px; }
       .search-box .input { padding-right: 32px; }
       .clear-search {
@@ -320,11 +452,12 @@ export const blogHomeHtml = `<!doctype html>
         margin-bottom: 8px;
       }
       .note-card {
-        padding: 14px; border-radius: 14px;
-        border: 1px solid transparent; background: var(--card-bg);
-        transition: all 0.2s; cursor: default;
+        padding: 14px; border-radius: 12px;
+        border: 1px solid var(--panel-border); background: var(--panel);
+        transition: all 0.15s; cursor: default;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
       }
-      .note-card:hover { border-color: var(--panel-border); }
+      .note-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(99,102,241,0.08); }
       .note-card.is-pinned { border-color: var(--pin-border); background: var(--pin-bg); }
       .note-card-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
       .note-card-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
@@ -353,24 +486,6 @@ export const blogHomeHtml = `<!doctype html>
       .modal-card { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; padding: 24px; }
       .modal-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
       .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
-      .fab-new {
-        position: fixed; bottom: max(24px, env(safe-area-inset-bottom));
-        right: 20px; z-index: 25; width: 52px; height: 52px;
-        border-radius: 50%; font-size: 24px; padding: 0;
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 8px 24px rgba(7,193,96,0.3);
-      }
-      .fab-top {
-        position: fixed; bottom: max(88px, calc(env(safe-area-inset-bottom) + 88px));
-        right: 20px; z-index: 25; width: 40px; height: 40px;
-        border-radius: 50%; font-size: 16px; padding: 0; opacity: 0;
-        pointer-events: none; transition: opacity 0.3s;
-        display: flex; align-items: center; justify-content: center;
-        background: var(--panel); border: 1px solid var(--panel-border);
-        color: var(--text); box-shadow: var(--shadow);
-      }
-      .fab-top.show { opacity: 1; pointer-events: auto; }
-      .hidden-when-modal { transition: opacity 0.2s; }
       .search-highlight { background: var(--highlight-bg); border-radius: 2px; padding: 0 2px; }
 
       /* Tag management */
@@ -460,13 +575,25 @@ export const blogHomeHtml = `<!doctype html>
       .image-upload-area:hover { border-color: var(--accent); }
       .image-preview { max-width: 100%; border-radius: 8px; margin: 8px 0; }
 
+      @media (max-width: 768px) {
+        .sidebar { display: none; }
+        .mobile-bottom-bar {
+          display: flex !important;
+          position: fixed; bottom: 0; left: 0; right: 0;
+          background: var(--panel); border-top: 1px solid var(--panel-border);
+          z-index: 30; padding: 6px 0 env(safe-area-inset-bottom, 6px);
+          justify-content: space-around;
+        }
+        .mobile-bottom-bar .sidebar-item { flex-direction: column; gap: 2px; font-size: 10px; padding: 6px 12px; }
+        .mobile-bottom-bar .sidebar-item .icon { font-size: 18px; }
+        .editor-panel { width: 100%; }
+        .content-header { padding: 12px 14px; }
+        .content-body { padding: 12px 14px; }
+      }
+      .mobile-bottom-bar { display: none; }
       @media (max-width: 640px) {
-        .topbar { gap: 6px; }
-        .topbar-title { font-size: 16px; }
-        .search-box { max-width: 100%; min-width: 0; flex-basis: 100%; order: 10; }
         .note-actions { gap: 4px; }
         .note-actions .btn { padding: 6px 10px; font-size: 11px; }
-        .fab-new { width: 48px; height: 48px; font-size: 22px; }
         /* Login mobile */
         .login-content { padding: 0 20px; }
         .login-title { font-size: 36px !important; }
@@ -516,124 +643,204 @@ export const blogHomeHtml = `<!doctype html>
       </section>
 
       <section id="appView" class="hidden">
-        <header id="topbar" class="topbar">
-          <div>
-            <div class="topbar-title">我的笔记</div>
-            <div class="topbar-sub">端到端加密 · Cloudflare D1</div>
+        <div class="app-shell">
+
+          <!-- ─── Sidebar ───────────────────── -->
+          <aside class="sidebar">
+            <div class="sidebar-brand">
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M32 4L58 32L32 60L6 32Z" fill="#6366f1"/>
+                <path d="M32 4L58 32L32 34Z" fill="#818cf8"/>
+                <path d="M32 4L6 32L32 34Z" fill="#4f46e5"/>
+              </svg>
+              Edge Notes
+            </div>
+
+            <nav class="sidebar-nav">
+              <div class="sidebar-item active" data-view="notes"><span class="icon">📝</span>全部笔记</div>
+              <div class="sidebar-item" data-view="trash"><span class="icon">🗑️</span>回收站</div>
+              <div class="sidebar-item" data-view="settings"><span class="icon">⚙️</span>设置与备份</div>
+            </nav>
+
+            <div class="sidebar-tags">
+              <div class="sidebar-section-title">标签</div>
+              <div id="sidebarTagList" class="sidebar-tag-list"></div>
+              <div class="sidebar-tag-add">
+                <input id="newTagInput" class="input" placeholder="新标签…" />
+                <input id="newTagColor" type="color" class="tag-color-input" value="#6366f1" style="width:30px;height:30px;border-radius:6px;border:none;cursor:pointer;padding:0;flex-shrink:0;" />
+                <button id="addTagBtn" class="btn small" style="flex-shrink:0;">＋</button>
+              </div>
+            </div>
+
+            <div class="sidebar-footer">
+              <div class="sidebar-item" id="themeToggleBtn"><span class="icon">🌙</span>切换主题</div>
+              <div class="sidebar-item" id="logoutBtn"><span class="icon">🚪</span>退出登录</div>
+            </div>
+          </aside>
+
+          <!-- ─── Main Content ──────────────── -->
+          <div class="main-content">
+            <div class="content-header">
+              <div class="search-box">
+                <input id="searchInput" class="input" placeholder="搜索标题或正文…" />
+                <button id="clearSearchBtn" class="clear-search" type="button" aria-label="清空搜索">×</button>
+              </div>
+              <button id="newBtn" class="btn new-btn">＋ 新建笔记</button>
+            </div>
+
+            <div class="content-body" id="contentBody">
+              <!-- Settings Panel -->
+              <section id="settingsPanel" class="hidden">
+                <div class="section-head">
+                  <h2 class="section-title">⚙️ 设置与备份</h2>
+                </div>
+
+                <div class="settings-section">
+                  <div class="settings-section-title">WebDAV 备份配置</div>
+                  <div class="settings-form">
+                    <div class="settings-field">
+                      <label>服务器地址</label>
+                      <input id="webdavUrl" class="input" placeholder="https://dav.example.com/dav/" />
+                    </div>
+                    <div class="settings-field-row">
+                      <div class="settings-field">
+                        <label>用户名</label>
+                        <input id="webdavUser" class="input" placeholder="username" />
+                      </div>
+                      <div class="settings-field">
+                        <label>密码</label>
+                        <input id="webdavPass" class="input" type="password" placeholder="password" />
+                      </div>
+                    </div>
+                    <div class="settings-actions">
+                      <button id="webdavTestBtn" class="btn secondary small">测试连接</button>
+                      <button id="webdavSaveBtn" class="btn secondary small">保存配置</button>
+                      <span id="webdavStatus" class="settings-status"></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-section">
+                  <div class="settings-section-title">备份与恢复</div>
+                  <div class="settings-actions">
+                    <button id="webdavBackupBtn" class="btn secondary">📤 备份到 WebDAV</button>
+                    <button id="webdavRestoreBtn" class="btn secondary">📥 从 WebDAV 恢复</button>
+                    <button id="fileImportBtn" class="btn secondary">📁 从文件导入</button>
+                    <input id="importFileInput" type="file" accept=".json" style="display:none" />
+                  </div>
+                  <div id="backupInfo" class="settings-info"></div>
+                </div>
+
+                <div class="settings-section">
+                  <div class="settings-section-title">导出</div>
+                  <div class="settings-actions">
+                    <button id="exportJsonBtn" class="btn secondary">📋 导出为 JSON</button>
+                    <button id="exportMdBtn" class="btn secondary">📝 导出为 Markdown</button>
+                  </div>
+                </div>
+
+                <div class="settings-section">
+                  <div class="settings-section-title">定时备份</div>
+                  <div class="settings-field">
+                    <label>启用自动备份</label>
+                    <div class="toggle-row">
+                      <label class="toggle toggle-lg">
+                        <input id="autoBackupToggle" type="checkbox" />
+                        <span class="toggle-slider"></span>
+                      </label>
+                      <span id="autoBackupLabel" class="toggle-label">关</span>
+                    </div>
+                  </div>
+                  <div class="settings-field">
+                    <label>备份日期</label>
+                    <div id="autoBackupDays" class="day-row">
+                      <label class="day-chip"><input type="checkbox" value="1" checked /><span>一</span></label>
+                      <label class="day-chip"><input type="checkbox" value="2" checked /><span>二</span></label>
+                      <label class="day-chip"><input type="checkbox" value="3" checked /><span>三</span></label>
+                      <label class="day-chip"><input type="checkbox" value="4" checked /><span>四</span></label>
+                      <label class="day-chip"><input type="checkbox" value="5" checked /><span>五</span></label>
+                      <label class="day-chip"><input type="checkbox" value="6" /><span>六</span></label>
+                      <label class="day-chip"><input type="checkbox" value="0" /><span>日</span></label>
+                    </div>
+                  </div>
+                  <div class="settings-field-row">
+                    <div class="settings-field">
+                      <label>备份时间</label>
+                      <input id="autoBackupTime" class="input" type="time" value="03:00" />
+                    </div>
+                    <div class="settings-field">
+                      <label>保留份数</label>
+                      <input id="autoBackupKeep" class="input" type="number" min="1" max="99" value="7" />
+                    </div>
+                  </div>
+                  <div id="autoBackupInfo" class="settings-info"></div>
+                </div>
+              </section>
+
+              <!-- Trash View -->
+              <section id="trashView" class="hidden">
+                <div class="section-head">
+                  <div>
+                    <h2 class="section-title">🗑️ 回收站</h2>
+                    <div class="section-desc">删除的笔记会在 30 天后自动清理。</div>
+                  </div>
+                </div>
+                <div id="trashList" class="note-list"></div>
+              </section>
+
+              <!-- Main Note Feed -->
+              <main id="mainFeed" class="feed">
+                <div class="section-head">
+                  <div>
+                    <h2 class="section-title">全部笔记</h2>
+                    <div class="section-desc" id="feedDesc">按更新时间排序，支持搜索和标签筛选。</div>
+                  </div>
+                  <div id="noteCount" class="muted">0 条</div>
+                </div>
+                <div id="noteList" class="note-list"></div>
+              </main>
+            </div>
+
+            <!-- ─── Editor Panel ────────────── -->
+            <div id="editorPanel" class="editor-panel">
+              <div class="editor-head">
+                <div>
+                  <h3 id="modalTitle">新建笔记</h3>
+                  <div class="section-desc">支持 Markdown，可插入图片。</div>
+                </div>
+                <button id="closeModalBtn" class="btn-icon" type="button" aria-label="关闭">✕</button>
+              </div>
+              <div class="editor-body">
+                <input id="editorTitle" class="editor-title-input" placeholder="标题" />
+                <div class="editor-toolbar">
+                  <button id="insertImageBtn" class="btn secondary small" type="button">📷 图片</button>
+                  <button id="editorPinBtn" class="btn secondary small" type="button">📌 置顶</button>
+                  <button id="editorShareBtn" class="btn secondary small" type="button">🔗 分享</button>
+                  <button id="editorExportBtn" class="btn secondary small" type="button">📤 导出</button>
+                </div>
+                <textarea id="editorContent" class="editor-textarea" placeholder="# 今天想到什么&#10;&#10;- 一条记录&#10;- 一个链接&#10;- 一个待办"></textarea>
+                <div id="imageUploadArea" class="image-upload-area hidden">
+                  📷 点击或拖拽图片到这里上传（最大 5MB）
+                  <input id="imageFileInput" type="file" accept="image/*" style="display:none" />
+                </div>
+                <div id="editorTagSelect" class="editor-tags"></div>
+              </div>
+              <div class="editor-actions">
+                <button id="cancelBtn" class="btn secondary">取消</button>
+                <button id="saveBtn" class="btn">保存</button>
+              </div>
+            </div>
           </div>
-          <div class="search-box">
-            <input id="searchInput" class="input" placeholder="搜索标题或正文…" />
-            <button id="clearSearchBtn" class="clear-search" type="button" aria-label="清空搜索">×</button>
-          </div>
-          <button id="tagFilterBtn" class="btn secondary small" title="按标签筛选">🏷️ 标签</button>
-          <button id="trashBtn" class="btn secondary small" title="回收站">🗑️ 回收站</button>
-          <button id="settingsBtn" class="btn secondary small" title="设置与备份">⚙️ 设置</button>
-          <button id="themeToggleBtn" class="btn secondary small icon-btn" title="切换主题">🌙</button>
-          <button id="newBtn" class="btn">新建笔记</button>
-          <button id="logoutBtn" class="btn secondary">退出</button>
-        </header>
+        </div>
+
+        <!-- Mobile bottom bar -->
+        <div class="mobile-bottom-bar">
+          <div class="sidebar-item active" data-view="notes"><span class="icon">📝</span>笔记</div>
+          <div class="sidebar-item" data-view="trash"><span class="icon">🗑️</span>回收站</div>
+          <div class="sidebar-item" data-view="settings"><span class="icon">⚙️</span>设置</div>
+        </div>
 
         <div id="statusLine" class="status-line"></div>
-
-        <!-- Tag Manager Panel -->
-        <section id="tagPanel" class="card tag-manager hidden">
-          <div class="tag-manager-title">标签管理</div>
-          <div id="tagList" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input id="newTagInput" class="input" placeholder="新标签名…" />
-            <input id="newTagColor" type="color" class="tag-color-input" value="#6366f1" />
-            <button id="addTagBtn" class="btn small">添加</button>
-          </div>
-        </section>
-
-        <!-- Settings Panel -->
-        <section id="settingsPanel" class="card settings-panel hidden">
-          <div class="section-head">
-            <h2 class="section-title">⚙️ 设置</h2>
-            <button id="closeSettingsBtn" class="btn secondary small">关闭</button>
-          </div>
-
-          <div class="settings-section">
-            <div class="settings-section-title">WebDAV 备份配置</div>
-            <div class="settings-form">
-              <div class="settings-field">
-                <label>服务器地址</label>
-                <input id="webdavUrl" class="input" placeholder="https://dav.example.com/dav/" />
-              </div>
-              <div class="settings-field-row">
-                <div class="settings-field">
-                  <label>用户名</label>
-                  <input id="webdavUser" class="input" placeholder="username" />
-                </div>
-                <div class="settings-field">
-                  <label>密码</label>
-                  <input id="webdavPass" class="input" type="password" placeholder="password" />
-                </div>
-              </div>
-              <div class="settings-actions">
-                <button id="webdavTestBtn" class="btn secondary small">测试连接</button>
-                <button id="webdavSaveBtn" class="btn secondary small">保存配置</button>
-                <span id="webdavStatus" class="settings-status"></span>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section">
-            <div class="settings-section-title">备份与恢复</div>
-            <div class="settings-actions">
-              <button id="webdavBackupBtn" class="btn secondary">📤 备份到 WebDAV</button>
-              <button id="webdavRestoreBtn" class="btn secondary">📥 从 WebDAV 恢复</button>
-              <button id="fileImportBtn" class="btn secondary">📁 从文件导入</button>
-              <input id="importFileInput" type="file" accept=".json" style="display:none" />
-            </div>
-            <div id="backupInfo" class="settings-info"></div>
-          </div>
-
-          <div class="settings-section">
-            <div class="settings-section-title">导出</div>
-            <div class="settings-actions">
-              <button id="exportJsonBtn" class="btn secondary">📋 导出为 JSON</button>
-              <button id="exportMdBtn" class="btn secondary">📝 导出为 Markdown</button>
-            </div>
-          </div>
-
-          <div class="settings-section">
-            <div class="settings-section-title">定时备份</div>
-            <div class="settings-field">
-              <label>启用自动备份</label>
-              <div class="toggle-row">
-                <label class="toggle toggle-lg">
-                  <input id="autoBackupToggle" type="checkbox" />
-                  <span class="toggle-slider"></span>
-                </label>
-                <span id="autoBackupLabel" class="toggle-label">关</span>
-              </div>
-            </div>
-            <div class="settings-field">
-              <label>备份日期</label>
-              <div id="autoBackupDays" class="day-row">
-                <label class="day-chip"><input type="checkbox" value="1" checked /><span>一</span></label>
-                <label class="day-chip"><input type="checkbox" value="2" checked /><span>二</span></label>
-                <label class="day-chip"><input type="checkbox" value="3" checked /><span>三</span></label>
-                <label class="day-chip"><input type="checkbox" value="4" checked /><span>四</span></label>
-                <label class="day-chip"><input type="checkbox" value="5" checked /><span>五</span></label>
-                <label class="day-chip"><input type="checkbox" value="6" /><span>六</span></label>
-                <label class="day-chip"><input type="checkbox" value="0" /><span>日</span></label>
-              </div>
-            </div>
-            <div class="settings-field-row">
-              <div class="settings-field">
-                <label>备份时间</label>
-                <input id="autoBackupTime" class="input" type="time" value="03:00" />
-              </div>
-              <div class="settings-field">
-                <label>保留份数</label>
-                <input id="autoBackupKeep" class="input" type="number" min="1" max="99" value="7" />
-              </div>
-            </div>
-            <div id="autoBackupInfo" class="settings-info"></div>
-          </div>
-        </section>
 
         <!-- Import Preview Modal -->
         <div id="importModal" class="modal-backdrop hidden">
@@ -649,87 +856,29 @@ export const blogHomeHtml = `<!doctype html>
           </div>
         </div>
 
-        <!-- Trash View -->
-        <section id="trashView" class="card feed hidden">
-          <div class="section-head">
-            <div>
-              <h2 class="section-title">🗑️ 回收站</h2>
-              <div class="section-desc">删除的笔记会在 30 天后自动清理。</div>
+        <!-- Share Dialog -->
+        <div id="shareModal" class="modal-backdrop hidden">
+          <div class="card share-dialog">
+            <div class="modal-head">
+              <h2 class="section-title">🔗 分享笔记</h2>
+              <button id="closeShareBtn" class="btn secondary small">关闭</button>
             </div>
-            <button id="closeTrashBtn" class="btn secondary small">返回笔记</button>
-          </div>
-          <div id="trashList" class="note-list"></div>
-        </section>
-
-        <!-- Main Note Feed -->
-        <main id="mainFeed" class="card feed">
-          <div class="section-head">
-            <div>
-              <h2 class="section-title">全部笔记</h2>
-              <div class="section-desc">按更新时间排序，支持搜索和标签筛选。</div>
+            <p class="muted" style="margin-bottom:12px;">创建公开链接，无需登录即可查看。</p>
+            <div style="display:flex; gap:8px; margin-bottom:14px;">
+              <select id="shareExpiry" class="input" style="max-width:160px;">
+                <option value="">永不过期</option>
+                <option value="3600000">1 小时</option>
+                <option value="86400000">1 天</option>
+                <option value="604800000">7 天</option>
+                <option value="2592000000">30 天</option>
+              </select>
+              <button id="createShareBtn" class="btn">创建链接</button>
             </div>
-            <div id="noteCount" class="muted">0 条</div>
+            <div id="shareLinks"></div>
           </div>
-          <div id="noteList" class="note-list"></div>
-        </main>
+        </div>
       </section>
     </div>
-
-    <!-- Editor Modal -->
-    <div id="editorModal" class="modal-backdrop hidden">
-      <div class="card modal-card">
-        <div class="modal-head">
-          <div>
-            <h2 id="modalTitle" class="section-title">新建笔记</h2>
-            <div class="section-desc">支持 Markdown，可插入图片。</div>
-          </div>
-          <button id="closeModalBtn" class="btn secondary">关闭</button>
-        </div>
-        <input id="editorTitle" class="input" placeholder="标题" />
-        <div style="height:10px"></div>
-        <div class="editor-toolbar" style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;">
-          <button id="insertImageBtn" class="btn secondary small" type="button">📷 插入图片</button>
-          <button id="editorPinBtn" class="btn secondary small" type="button">📌 置顶</button>
-          <button id="editorShareBtn" class="btn secondary small" type="button">🔗 分享</button>
-          <button id="editorExportBtn" class="btn secondary small" type="button">📤 导出</button>
-          <div id="editorTagSelect" style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;"></div>
-        </div>
-        <textarea id="editorContent" class="textarea" placeholder="# 今天想到什么&#10;&#10;- 一条记录&#10;- 一个链接&#10;- 一个待办"></textarea>
-        <div id="imageUploadArea" class="image-upload-area hidden">
-          📷 点击或拖拽图片到这里上传（最大 5MB）
-          <input id="imageFileInput" type="file" accept="image/*" style="display:none" />
-        </div>
-        <div class="modal-actions">
-          <button id="cancelBtn" class="btn secondary">取消</button>
-          <button id="saveBtn" class="btn">保存</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Share Dialog -->
-    <div id="shareModal" class="modal-backdrop hidden">
-      <div class="card share-dialog">
-        <div class="modal-head">
-          <h2 class="section-title">🔗 分享笔记</h2>
-          <button id="closeShareBtn" class="btn secondary small">关闭</button>
-        </div>
-        <p class="muted" style="margin-bottom:12px;">创建公开链接，无需登录即可查看。</p>
-        <div style="display:flex; gap:8px; margin-bottom:14px;">
-          <select id="shareExpiry" class="input" style="max-width:160px;">
-            <option value="">永不过期</option>
-            <option value="3600000">1 小时</option>
-            <option value="86400000">1 天</option>
-            <option value="604800000">7 天</option>
-            <option value="2592000000">30 天</option>
-          </select>
-          <button id="createShareBtn" class="btn">创建链接</button>
-        </div>
-        <div id="shareLinks"></div>
-      </div>
-    </div>
-
-    <button id="fabNewBtn" class="btn fab-new hidden hidden-when-modal" type="button" aria-label="新建笔记">＋</button>
-    <button id="fabTopBtn" class="fab-top hidden-when-modal" type="button" aria-label="回到顶部">↑</button>
 
     <script>
       const state = {
@@ -763,35 +912,30 @@ export const blogHomeHtml = `<!doctype html>
         passwordHelp: document.getElementById('passwordHelp'),
         loginBtn: document.getElementById('loginBtn'),
         loginStatus: document.getElementById('loginStatus'),
-        topbar: document.getElementById('topbar'),
         searchInput: document.getElementById('searchInput'),
         clearSearchBtn: document.getElementById('clearSearchBtn'),
         newBtn: document.getElementById('newBtn'),
-        fabNewBtn: document.getElementById('fabNewBtn'),
-        fabTopBtn: document.getElementById('fabTopBtn'),
         logoutBtn: document.getElementById('logoutBtn'),
         statusLine: document.getElementById('statusLine'),
-        vaultPanel: document.getElementById('vaultPanel'),
         noteCount: document.getElementById('noteCount'),
         noteList: document.getElementById('noteList'),
-        editorModal: document.getElementById('editorModal'),
+        editorPanel: document.getElementById('editorPanel'),
         modalTitle: document.getElementById('modalTitle'),
         editorTitle: document.getElementById('editorTitle'),
         editorContent: document.getElementById('editorContent'),
         closeModalBtn: document.getElementById('closeModalBtn'),
         cancelBtn: document.getElementById('cancelBtn'),
         saveBtn: document.getElementById('saveBtn'),
-        tagPanel: document.getElementById('tagPanel'),
-        tagList: document.getElementById('tagList'),
+        sidebarTagList: document.getElementById('sidebarTagList'),
         newTagInput: document.getElementById('newTagInput'),
         newTagColor: document.getElementById('newTagColor'),
         addTagBtn: document.getElementById('addTagBtn'),
-        tagFilterBtn: document.getElementById('tagFilterBtn'),
-        trashBtn: document.getElementById('trashBtn'),
+        sidebarItems: document.querySelectorAll('.sidebar-item[data-view]'),
         trashView: document.getElementById('trashView'),
         trashList: document.getElementById('trashList'),
-        closeTrashBtn: document.getElementById('closeTrashBtn'),
         mainFeed: document.getElementById('mainFeed'),
+        contentBody: document.getElementById('contentBody'),
+        feedDesc: document.getElementById('feedDesc'),
         themeToggleBtn: document.getElementById('themeToggleBtn'),
         editorPinBtn: document.getElementById('editorPinBtn'),
         editorShareBtn: document.getElementById('editorShareBtn'),
@@ -805,9 +949,7 @@ export const blogHomeHtml = `<!doctype html>
         shareExpiry: document.getElementById('shareExpiry'),
         createShareBtn: document.getElementById('createShareBtn'),
         shareLinks: document.getElementById('shareLinks'),
-        settingsBtn: document.getElementById('settingsBtn'),
         settingsPanel: document.getElementById('settingsPanel'),
-        closeSettingsBtn: document.getElementById('closeSettingsBtn'),
         webdavUrl: document.getElementById('webdavUrl'),
         webdavUser: document.getElementById('webdavUser'),
         webdavPass: document.getElementById('webdavPass'),
@@ -866,17 +1008,8 @@ export const blogHomeHtml = `<!doctype html>
         els.clearSearchBtn.classList.toggle('show', Boolean(els.searchInput.value.trim()));
       }
 
-      function updateScrollUi() {
-        els.fabTopBtn.classList.toggle('show', window.scrollY > 320);
-      }
-
       function updateModalUi() {
-        const open = !els.editorModal.classList.contains('hidden');
-        [els.topbar, els.fabNewBtn, els.fabTopBtn].forEach(function (el) {
-          if (!el) return;
-          el.style.opacity = open ? '0' : '';
-          el.style.pointerEvents = open ? 'none' : '';
-        });
+        // Editor panel handled via .open class in open/closeComposer
       }
 
       function updateLoginMode() {
@@ -904,7 +1037,6 @@ export const blogHomeHtml = `<!doctype html>
       function updateVaultUi() {
         els.searchInput.disabled = !state.vaultUnlocked;
         els.newBtn.disabled = !state.vaultUnlocked;
-        els.fabNewBtn.disabled = !state.vaultUnlocked;
       }
 
       function bytesToBase64(bytes) {
@@ -1070,11 +1202,21 @@ export const blogHomeHtml = `<!doctype html>
       }
 
       function renderTagList() {
-        els.tagList.innerHTML = '';
+        els.sidebarTagList.innerHTML = '';
+        // "全部笔记" pseudo-tag
+        const allItem = document.createElement('div');
+        allItem.className = 'sidebar-tag-item' + (!state.activeTagFilter ? ' active' : '');
+        allItem.innerHTML = '<span class="sidebar-tag-dot" style="background:var(--primary)"></span>全部';
+        allItem.onclick = function () {
+          state.activeTagFilter = null;
+          renderTagList(); refreshNotes();
+          setStatus('显示全部笔记');
+        };
+        els.sidebarTagList.appendChild(allItem);
         state.tags.forEach(function (tag) {
-          const el = document.createElement('span');
-          el.className = 'tag-item' + (state.activeTagFilter === tag.id ? ' active' : '');
-          el.innerHTML = '<span class="tag-dot" style="background:' + escapeHtml(tag.color) + '"></span>' + escapeHtml(tag.name);
+          const el = document.createElement('div');
+          el.className = 'sidebar-tag-item' + (state.activeTagFilter === tag.id ? ' active' : '');
+          el.innerHTML = '<span class="sidebar-tag-dot" style="background:' + escapeHtml(tag.color) + '"></span>' + escapeHtml(tag.name);
           el.onclick = function () {
             state.activeTagFilter = state.activeTagFilter === tag.id ? null : tag.id;
             renderTagList();
@@ -1083,6 +1225,7 @@ export const blogHomeHtml = `<!doctype html>
           const del = document.createElement('span');
           del.className = 'tag-del';
           del.textContent = '×';
+          del.style.cssText = 'margin-left:auto;font-size:13px;color:var(--danger);cursor:pointer;opacity:0.5;';
           del.onclick = async function (e) {
             e.stopPropagation();
             if (!confirm('删除标签 "' + tag.name + '"？')) return;
@@ -1093,7 +1236,7 @@ export const blogHomeHtml = `<!doctype html>
             setStatus('标签已删除');
           };
           el.appendChild(del);
-          els.tagList.appendChild(el);
+          els.sidebarTagList.appendChild(el);
         });
       }
 
@@ -1346,7 +1489,7 @@ export const blogHomeHtml = `<!doctype html>
         els.editorTitle.value = note ? note.title : '';
         els.editorContent.value = note ? note.content : '';
         els.editorPinBtn.textContent = (note && note.is_pinned) ? '取消置顶' : '📌 置顶';
-        els.editorModal.classList.remove('hidden');
+        els.editorPanel.classList.add('open');
         updateModalUi();
         els.editorTitle.focus();
         // Load note tags
@@ -1367,7 +1510,7 @@ export const blogHomeHtml = `<!doctype html>
       }
 
       function closeComposer() {
-        els.editorModal.classList.add('hidden');
+        els.editorPanel.classList.remove('open');
         state.editingId = null;
         updateModalUi();
       }
@@ -1918,15 +2061,50 @@ export const blogHomeHtml = `<!doctype html>
       };
 
       els.newBtn.onclick = function () { openComposer(null); };
-      els.fabNewBtn.onclick = function () { openComposer(null); };
 
-      els.fabTopBtn.onclick = function () { window.scrollTo({ top: 0, behavior: 'smooth' }); };
+      // ─── Sidebar navigation ──────────────
+      function switchView(view) {
+        els.sidebarItems.forEach(function (item) {
+          item.classList.toggle('active', item.dataset.view === view);
+        });
+        const isSettings = view === 'settings';
+        const isTrash = view === 'trash';
+        els.settingsPanel.classList.toggle('hidden', !isSettings);
+        els.trashView.classList.toggle('hidden', !isTrash);
+        els.mainFeed.classList.toggle('hidden', isSettings || isTrash);
+        if (isSettings) {
+          state.showingTrash = false;
+          loadWebdavConfigToUI();
+          var abCfg = getAutoBackupConfig();
+          els.autoBackupToggle.checked = !!abCfg.enabled;
+          setSelectedDays(abCfg.days || [1,2,3,4,5]);
+          els.autoBackupTime.value = abCfg.time || '03:00';
+          els.autoBackupKeep.value = String(abCfg.keepCount || 7);
+          updateAutoBackupInfo();
+        } else if (isTrash) {
+          state.showingTrash = true;
+          loadTrash();
+        } else {
+          state.showingTrash = false;
+          if (state.activeTagFilter) {
+            const tag = getTagById(state.activeTagFilter);
+            els.feedDesc.textContent = tag ? ('标签: ' + tag.name) : '全部笔记';
+          } else {
+            els.feedDesc.textContent = '按更新时间排序，支持搜索和标签筛选。';
+          }
+        }
+      }
+      els.sidebarItems.forEach(function (item) {
+        item.onclick = function () { switchView(item.dataset.view); };
+      });
 
       els.logoutBtn.onclick = async function () {
         await api('/api/logout', { method: 'POST' });
         state.notes = []; state.allNotes = []; state.tags = [];
         state.sessionAuthenticated = false; state.vaultUnlocked = false; state.vaultKey = null;
         state.noteCountMeta = 0; state.activeTagFilter = null;
+        closeComposer();
+        switchView('notes');
         clearSensitiveInputs(); state.unlockError = '';
         showLogin(); setStatus('');
       };
@@ -1936,11 +2114,6 @@ export const blogHomeHtml = `<!doctype html>
       els.saveBtn.onclick = function () { saveComposer().catch(function (e) { setStatus(e.message || '保存失败'); }); };
 
       els.themeToggleBtn.onclick = toggleTheme;
-
-      els.tagFilterBtn.onclick = function () {
-        els.tagPanel.classList.toggle('hidden');
-        if (!els.tagPanel.classList.contains('hidden')) refreshTags();
-      };
 
       els.addTagBtn.onclick = async function () {
         const name = els.newTagInput.value.trim();
@@ -1955,20 +2128,6 @@ export const blogHomeHtml = `<!doctype html>
       };
 
       els.newTagInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') els.addTagBtn.click(); });
-
-      els.trashBtn.onclick = function () {
-        state.showingTrash = true;
-        els.trashView.classList.remove('hidden');
-        els.mainFeed.classList.add('hidden');
-        els.tagPanel.classList.add('hidden');
-        loadTrash();
-      };
-
-      els.closeTrashBtn.onclick = function () {
-        state.showingTrash = false;
-        els.trashView.classList.add('hidden');
-        els.mainFeed.classList.remove('hidden');
-      };
 
       els.editorPinBtn.onclick = async function () {
         if (!state.editingId) { setStatus('请先保存笔记后再置顶'); return; }
@@ -2019,30 +2178,6 @@ export const blogHomeHtml = `<!doctype html>
       };
 
       // ─── Settings Event Listeners ─────────
-      els.settingsBtn.onclick = function () {
-        els.settingsPanel.classList.toggle('hidden');
-        if (!els.settingsPanel.classList.contains('hidden')) {
-          els.tagPanel.classList.add('hidden');
-          els.trashView.classList.add('hidden');
-          els.mainFeed.classList.add('hidden');
-          loadWebdavConfigToUI();
-          // Sync auto-backup UI
-          var abCfg = getAutoBackupConfig();
-          els.autoBackupToggle.checked = !!abCfg.enabled;
-          setSelectedDays(abCfg.days || [1,2,3,4,5]);
-          els.autoBackupTime.value = abCfg.time || '03:00';
-          els.autoBackupKeep.value = String(abCfg.keepCount || 7);
-          updateAutoBackupInfo();
-        } else {
-          els.mainFeed.classList.remove('hidden');
-        }
-      };
-
-      els.closeSettingsBtn.onclick = function () {
-        els.settingsPanel.classList.add('hidden');
-        els.mainFeed.classList.remove('hidden');
-      };
-
       els.webdavSaveBtn.onclick = function () {
         saveWebdavConfig({
           url: els.webdavUrl.value.trim(),
@@ -2121,20 +2256,19 @@ export const blogHomeHtml = `<!doctype html>
         if (e.key === 'Escape') {
           if (!els.importModal.classList.contains('hidden')) { els.importModal.classList.add('hidden'); return; }
           if (!els.shareModal.classList.contains('hidden')) { closeShareDialog(); return; }
-          if (!els.settingsPanel.classList.contains('hidden')) { els.settingsPanel.classList.add('hidden'); els.mainFeed.classList.remove('hidden'); return; }
-          if (!els.editorModal.classList.contains('hidden')) { closeComposer(); return; }
+          if (els.editorPanel.classList.contains('open')) { closeComposer(); return; }
+          if (!els.settingsPanel.classList.contains('hidden')) { switchView('notes'); return; }
+          if (!els.trashView.classList.contains('hidden')) { switchView('notes'); return; }
         }
         const isSave = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's';
-        if (isSave && !els.editorModal.classList.contains('hidden')) {
+        if (isSave && els.editorPanel.classList.contains('open')) {
           e.preventDefault();
           saveComposer().catch(function (err) { setStatus(err.message || '保存失败'); });
         }
       });
 
-      window.addEventListener('scroll', updateScrollUi, { passive: true });
-
       // ─── Init ─────────────────────────────
-      updateSearchUi(); updateScrollUi(); updateModalUi();
+      updateSearchUi(); updateModalUi();
       checkSession().catch(function () { showLogin(); });
       startAutoBackupTimer();
     </script>
