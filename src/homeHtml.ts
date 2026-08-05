@@ -1412,8 +1412,8 @@ export const blogHomeHtml = `<!doctype html>
       async function webdavRequest(path, method, body, contentType) {
         const cfg = getWebdavConfig();
         if (!cfg.url) throw new Error('请先配置 WebDAV 服务器地址');
-        const baseUrl = cfg.url.replace(/\/+$/, '');
-        const url = baseUrl + '/' + path.replace(/^\/+/, '');
+        const baseUrl = cfg.url.replace(/\\/+$/, '');
+        const url = baseUrl + '/' + path.replace(/^\\/+/, '');
         const headers = { 'Authorization': webdavAuth(cfg.user || '', cfg.pass || '') };
         if (contentType) headers['Content-Type'] = contentType;
         const opts = { method, headers };
@@ -1429,7 +1429,7 @@ export const blogHomeHtml = `<!doctype html>
         const cfg = getWebdavConfig();
         if (!cfg.url) throw new Error('请填写服务器地址');
         // Try PROPFIND to test connection
-        const baseUrl = cfg.url.replace(/\/+$/, '');
+        const baseUrl = cfg.url.replace(/\\/+$/, '');
         const res = await fetch(baseUrl, {
           method: 'PROPFIND',
           headers: {
