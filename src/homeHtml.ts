@@ -400,19 +400,37 @@ export const blogHomeHtml = `<!doctype html>
       .import-preview .import-stat:last-child { border-bottom: none; }
 
       /* Toggle switch */
-      .toggle { position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer; }
+      .toggle { position: relative; display: inline-block; width: 48px; height: 26px; cursor: pointer; }
       .toggle input { opacity: 0; width: 0; height: 0; }
       .toggle-slider {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-        background: var(--border); border-radius: 24px; transition: .3s;
+        background: #94a3b8; border-radius: 26px; transition: .3s;
       }
       .toggle-slider::before {
-        content: ''; position: absolute; height: 18px; width: 18px;
+        content: ''; position: absolute; height: 20px; width: 20px;
         left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
       }
-      .toggle input:checked + .toggle-slider { background: var(--primary); }
-      .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
-      .toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+      .toggle input:checked + .toggle-slider { background: #22c55e; }
+      .toggle input:checked + .toggle-slider::before { transform: translateX(22px); }
+      .toggle-lg { width: 52px; height: 28px; }
+      .toggle-lg .toggle-slider::before { height: 22px; width: 22px; }
+      .toggle-lg input:checked + .toggle-slider::before { transform: translateX(24px); }
+      .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+      .toggle-label { font-size: 14px; font-weight: 700; }
+      .toggle-label.on { color: #22c55e; }
+      /* Day-of-week chips */
+      .day-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+      .day-chip {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 36px; height: 32px; border-radius: 8px; cursor: pointer;
+        border: 1.5px solid var(--border); background: var(--panel-bg);
+        font-size: 13px; font-weight: 600; transition: .2s; user-select: none;
+      }
+      .day-chip input { display: none; }
+      .day-chip:has(input:checked) {
+        background: var(--primary); color: #fff; border-color: var(--primary);
+      }
       .toggle-label { font-size: 13px; font-weight: 600; color: var(--muted); }
       .toggle-label.on { color: var(--primary); }
 
@@ -574,25 +592,36 @@ export const blogHomeHtml = `<!doctype html>
 
           <div class="settings-section">
             <div class="settings-section-title">定时备份</div>
-            <div class="settings-field-row">
-              <div class="settings-field" style="flex:1">
-                <label>启用自动备份</label>
-                <div class="toggle-row">
-                  <label class="toggle">
-                    <input id="autoBackupToggle" type="checkbox" />
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span id="autoBackupLabel" class="toggle-label">关</span>
-                </div>
+            <div class="settings-field">
+              <label>启用自动备份</label>
+              <div class="toggle-row">
+                <label class="toggle toggle-lg">
+                  <input id="autoBackupToggle" type="checkbox" />
+                  <span class="toggle-slider"></span>
+                </label>
+                <span id="autoBackupLabel" class="toggle-label">关</span>
               </div>
-              <div class="settings-field" style="flex:2">
-                <label>备份间隔</label>
-                <select id="autoBackupInterval" class="input">
-                  <option value="1">每 1 小时</option>
-                  <option value="6" selected>每 6 小时</option>
-                  <option value="12">每 12 小时</option>
-                  <option value="24">每 24 小时</option>
-                </select>
+            </div>
+            <div class="settings-field">
+              <label>备份日期</label>
+              <div id="autoBackupDays" class="day-row">
+                <label class="day-chip"><input type="checkbox" value="1" checked /><span>一</span></label>
+                <label class="day-chip"><input type="checkbox" value="2" checked /><span>二</span></label>
+                <label class="day-chip"><input type="checkbox" value="3" checked /><span>三</span></label>
+                <label class="day-chip"><input type="checkbox" value="4" checked /><span>四</span></label>
+                <label class="day-chip"><input type="checkbox" value="5" checked /><span>五</span></label>
+                <label class="day-chip"><input type="checkbox" value="6" /><span>六</span></label>
+                <label class="day-chip"><input type="checkbox" value="0" /><span>日</span></label>
+              </div>
+            </div>
+            <div class="settings-field-row">
+              <div class="settings-field">
+                <label>备份时间</label>
+                <input id="autoBackupTime" class="input" type="time" value="03:00" />
+              </div>
+              <div class="settings-field">
+                <label>保留份数</label>
+                <input id="autoBackupKeep" class="input" type="number" min="1" max="99" value="7" />
               </div>
             </div>
             <div id="autoBackupInfo" class="settings-info"></div>
@@ -790,7 +819,9 @@ export const blogHomeHtml = `<!doctype html>
         exportJsonBtn: document.getElementById('exportJsonBtn'),
         exportMdBtn: document.getElementById('exportMdBtn'),
         autoBackupToggle: document.getElementById('autoBackupToggle'),
-        autoBackupInterval: document.getElementById('autoBackupInterval'),
+        autoBackupDays: document.getElementById('autoBackupDays'),
+        autoBackupTime: document.getElementById('autoBackupTime'),
+        autoBackupKeep: document.getElementById('autoBackupKeep'),
         autoBackupInfo: document.getElementById('autoBackupInfo'),
         autoBackupLabel: document.getElementById('autoBackupLabel')
       };
@@ -1540,6 +1571,10 @@ export const blogHomeHtml = `<!doctype html>
         try {
           const data = await buildBackupData();
           const json = JSON.stringify(data, null, 2);
+          const now = new Date();
+          const fname = 'edge-notes/backup-' + formatDate(now) + '-' + formatTime(now) + '.json';
+          await webdavRequest(fname, 'PUT', json, 'application/json');
+          // Also update latest for easy restore
           await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
           const cfg = getWebdavConfig();
           cfg.lastBackup = Date.now();
@@ -1643,9 +1678,32 @@ export const blogHomeHtml = `<!doctype html>
         localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(cfg));
       }
 
+      function getSelectedDays() {
+        var days = [];
+        if (!els.autoBackupDays) return [1,2,3,4,5];
+        var checks = els.autoBackupDays.querySelectorAll('input[type=checkbox]');
+        checks.forEach(function (c) { if (c.checked) days.push(parseInt(c.value)); });
+        return days;
+      }
+
+      function setSelectedDays(days) {
+        if (!els.autoBackupDays) return;
+        var checks = els.autoBackupDays.querySelectorAll('input[type=checkbox]');
+        checks.forEach(function (c) { c.checked = days.indexOf(parseInt(c.value)) >= 0; });
+      }
+
+      function formatDate(d) {
+        var y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+        return y + '-' + m + '-' + dd;
+      }
+
+      function formatTime(d) {
+        return String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0');
+      }
+
       function updateAutoBackupInfo() {
-        const cfg = getAutoBackupConfig();
-        const el = document.getElementById('autoBackupInfo');
+        var cfg = getAutoBackupConfig();
+        var el = document.getElementById('autoBackupInfo');
         if (!el) return;
         // Update on/off label
         if (els.autoBackupLabel) {
@@ -1653,30 +1711,80 @@ export const blogHomeHtml = `<!doctype html>
           els.autoBackupLabel.className = 'toggle-label' + (cfg.enabled ? ' on' : '');
         }
         if (!cfg.enabled) { el.textContent = '定时备份已关闭'; return; }
-        const last = cfg.lastBackup;
-        el.textContent = '上次自动备份: ' + (last ? new Date(last).toLocaleString('zh-CN') : '尚未备份') +
-          ' · 间隔: 每 ' + (cfg.interval || 6) + ' 小时';
+        var dayNames = ['日','一','二','三','四','五','六'];
+        var days = (cfg.days || [1,2,3,4,5]).map(function (d) { return '周' + dayNames[d]; }).join('、');
+        var time = cfg.time || '03:00';
+        var keep = cfg.keepCount || 7;
+        var last = cfg.lastBackup;
+        el.textContent = '每周 ' + days + ' ' + time + ' · 保留 ' + keep + ' 份' +
+          (last ? ' · 上次: ' + new Date(last).toLocaleString('zh-CN') : '');
+      }
+
+      function shouldBackupNow(cfg) {
+        if (!cfg.enabled) return false;
+        var now = new Date();
+        var dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+        var days = cfg.days || [1,2,3,4,5];
+        if (days.indexOf(dayOfWeek) < 0) return false;
+        var parts = (cfg.time || '03:00').split(':');
+        var targetHour = parseInt(parts[0]) || 3;
+        var targetMin = parseInt(parts[1]) || 0;
+        // Check within 1-minute window
+        if (now.getHours() !== targetHour || now.getMinutes() !== targetMin) return false;
+        // Avoid double-backup: skip if lastBackup was within last 90 seconds
+        var last = cfg.lastBackup || 0;
+        if (Date.now() - last < 90000) return false;
+        return true;
+      }
+
+      async function cleanupOldBackups(keepCount) {
+        try {
+          var res = await webdavRequest('edge-notes/', 'PROPFIND', undefined, undefined);
+          var text = await res.text();
+          // Parse PROPFIND XML to find backup files
+          var files = [];
+          var re = /<d:href>([^<]*backup-[^<]*\.json)<\/d:href>/gi;
+          var m;
+          while ((m = re.exec(text)) !== null) {
+            var name = m[1].split('/').pop();
+            if (name.indexOf('backup-') === 0 && name.indexOf('.json') > 0) {
+              files.push(name);
+            }
+          }
+          // Sort descending by name (date in filename sorts naturally)
+          files.sort().reverse();
+          // Delete files beyond keep count
+          for (var i = keepCount; i < files.length; i++) {
+            try { await webdavRequest('edge-notes/' + files[i], 'DELETE'); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore cleanup errors */ }
       }
 
       function startAutoBackupTimer() {
         stopAutoBackupTimer();
-        const cfg = getAutoBackupConfig();
+        var cfg = getAutoBackupConfig();
         if (!cfg.enabled || !getWebdavConfig().url) return;
-        const intervalMs = (cfg.interval || 6) * 3600 * 1000;
+        // Check every 30 seconds
         autoBackupTimer = setInterval(async function () {
-          const c = getAutoBackupConfig();
-          const last = c.lastBackup || 0;
-          if (Date.now() - last >= intervalMs) {
+          var c = getAutoBackupConfig();
+          if (shouldBackupNow(c)) {
             try {
-              const data = await buildBackupData();
-              const json = JSON.stringify(data, null, 2);
+              var data = await buildBackupData();
+              var json = JSON.stringify(data, null, 2);
+              // Save with date-time filename
+              var now = new Date();
+              var fname = 'edge-notes/backup-' + formatDate(now) + '-' + formatTime(now) + '.json';
+              await webdavRequest(fname, 'PUT', json, 'application/json');
+              // Also update backup-latest.json for easy restore
               await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
+              // Cleanup old backups
+              await cleanupOldBackups(c.keepCount || 7);
               c.lastBackup = Date.now();
               saveAutoBackupConfig(c);
               updateAutoBackupInfo();
             } catch (e) { /* silent fail for auto backup */ }
           }
-        }, 60 * 1000);
+        }, 30 * 1000);
       }
 
       function stopAutoBackupTimer() {
@@ -1911,9 +2019,11 @@ export const blogHomeHtml = `<!doctype html>
           els.mainFeed.classList.add('hidden');
           loadWebdavConfigToUI();
           // Sync auto-backup UI
-          const abCfg = getAutoBackupConfig();
+          var abCfg = getAutoBackupConfig();
           els.autoBackupToggle.checked = !!abCfg.enabled;
-          els.autoBackupInterval.value = String(abCfg.interval || 6);
+          setSelectedDays(abCfg.days || [1,2,3,4,5]);
+          els.autoBackupTime.value = abCfg.time || '03:00';
+          els.autoBackupKeep.value = String(abCfg.keepCount || 7);
           updateAutoBackupInfo();
         } else {
           els.mainFeed.classList.remove('hidden');
@@ -1978,21 +2088,21 @@ export const blogHomeHtml = `<!doctype html>
       els.exportMdBtn.onclick = function () { exportAllNotes('markdown'); };
 
       // Auto backup controls
-      els.autoBackupToggle.onchange = function () {
-        const cfg = getAutoBackupConfig();
+      function saveAbConfigFromUI() {
+        var cfg = getAutoBackupConfig();
         cfg.enabled = els.autoBackupToggle.checked;
-        cfg.interval = parseInt(els.autoBackupInterval.value) || 6;
+        cfg.days = getSelectedDays();
+        cfg.time = els.autoBackupTime.value || '03:00';
+        cfg.keepCount = parseInt(els.autoBackupKeep.value) || 7;
         saveAutoBackupConfig(cfg);
         if (cfg.enabled) startAutoBackupTimer(); else stopAutoBackupTimer();
         updateAutoBackupInfo();
-      };
-      els.autoBackupInterval.onchange = function () {
-        const cfg = getAutoBackupConfig();
-        cfg.interval = parseInt(els.autoBackupInterval.value) || 6;
-        saveAutoBackupConfig(cfg);
-        if (cfg.enabled) startAutoBackupTimer();
-        updateAutoBackupInfo();
-      };
+      }
+      els.autoBackupToggle.onchange = saveAbConfigFromUI;
+      els.autoBackupTime.onchange = saveAbConfigFromUI;
+      els.autoBackupKeep.onchange = saveAbConfigFromUI;
+      // Delegate day chip clicks
+      els.autoBackupDays.addEventListener('change', saveAbConfigFromUI);
 
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
