@@ -399,6 +399,21 @@ export const blogHomeHtml = `<!doctype html>
       .import-preview .import-stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
       .import-preview .import-stat:last-child { border-bottom: none; }
 
+      /* Toggle switch */
+      .toggle { position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer; }
+      .toggle input { opacity: 0; width: 0; height: 0; }
+      .toggle-slider {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: var(--border); border-radius: 24px; transition: .3s;
+      }
+      .toggle-slider::before {
+        content: ''; position: absolute; height: 18px; width: 18px;
+        left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s;
+      }
+      .toggle input:checked + .toggle-slider { background: var(--primary); }
+      .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+      .settings-field > .toggle { margin-top: 2px; }
+
       /* Share dialog */
       .share-dialog { padding: 24px; width: min(480px, 100%); }
       .share-link-item {
@@ -485,7 +500,6 @@ export const blogHomeHtml = `<!doctype html>
           </div>
           <button id="tagFilterBtn" class="btn secondary small" title="按标签筛选">🏷️ 标签</button>
           <button id="trashBtn" class="btn secondary small" title="回收站">🗑️ 回收站</button>
-          <button id="exportBtn" class="btn secondary small" title="导出笔记">📤 导出</button>
           <button id="settingsBtn" class="btn secondary small" title="设置与备份">⚙️ 设置</button>
           <button id="themeToggleBtn" class="btn secondary small icon-btn" title="切换主题">🌙</button>
           <button id="newBtn" class="btn">新建笔记</button>
@@ -546,6 +560,37 @@ export const blogHomeHtml = `<!doctype html>
               <input id="importFileInput" type="file" accept=".json" style="display:none" />
             </div>
             <div id="backupInfo" class="settings-info"></div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">导出</div>
+            <div class="settings-actions">
+              <button id="exportJsonBtn" class="btn secondary">📋 导出为 JSON</button>
+              <button id="exportMdBtn" class="btn secondary">📝 导出为 Markdown</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">定时备份</div>
+            <div class="settings-field-row">
+              <div class="settings-field" style="flex:1">
+                <label>启用自动备份</label>
+                <label class="toggle">
+                  <input id="autoBackupToggle" type="checkbox" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="settings-field" style="flex:2">
+                <label>备份间隔</label>
+                <select id="autoBackupInterval" class="input">
+                  <option value="1">每 1 小时</option>
+                  <option value="6" selected>每 6 小时</option>
+                  <option value="12">每 12 小时</option>
+                  <option value="24">每 24 小时</option>
+                </select>
+              </div>
+            </div>
+            <div id="autoBackupInfo" class="settings-info"></div>
           </div>
         </section>
 
@@ -706,7 +751,6 @@ export const blogHomeHtml = `<!doctype html>
         trashList: document.getElementById('trashList'),
         closeTrashBtn: document.getElementById('closeTrashBtn'),
         mainFeed: document.getElementById('mainFeed'),
-        exportBtn: document.getElementById('exportBtn'),
         themeToggleBtn: document.getElementById('themeToggleBtn'),
         editorPinBtn: document.getElementById('editorPinBtn'),
         editorShareBtn: document.getElementById('editorShareBtn'),
@@ -737,7 +781,12 @@ export const blogHomeHtml = `<!doctype html>
         importModal: document.getElementById('importModal'),
         closeImportModalBtn: document.getElementById('closeImportModalBtn'),
         importPreview: document.getElementById('importPreview'),
-        confirmImportBtn: document.getElementById('confirmImportBtn')
+        confirmImportBtn: document.getElementById('confirmImportBtn'),
+        exportJsonBtn: document.getElementById('exportJsonBtn'),
+        exportMdBtn: document.getElementById('exportMdBtn'),
+        autoBackupToggle: document.getElementById('autoBackupToggle'),
+        autoBackupInterval: document.getElementById('autoBackupInterval'),
+        autoBackupInfo: document.getElementById('autoBackupInfo')
       };
 
       // ─── Theme ────────────────────────────
@@ -1575,6 +1624,54 @@ export const blogHomeHtml = `<!doctype html>
         reader.readAsText(file);
       }
 
+      // ─── Auto Backup ──────────────────────
+      const AUTO_BACKUP_KEY = 'auto_backup_config';
+      let autoBackupTimer = null;
+
+      function getAutoBackupConfig() {
+        try { return JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)) || {}; }
+        catch (e) { return {}; }
+      }
+
+      function saveAutoBackupConfig(cfg) {
+        localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(cfg));
+      }
+
+      function updateAutoBackupInfo() {
+        const cfg = getAutoBackupConfig();
+        const el = document.getElementById('autoBackupInfo');
+        if (!el) return;
+        if (!cfg.enabled) { el.textContent = '定时备份已关闭'; return; }
+        const last = cfg.lastBackup;
+        el.textContent = '上次自动备份: ' + (last ? new Date(last).toLocaleString('zh-CN') : '尚未备份') +
+          ' · 间隔: 每 ' + (cfg.interval || 6) + ' 小时';
+      }
+
+      function startAutoBackupTimer() {
+        stopAutoBackupTimer();
+        const cfg = getAutoBackupConfig();
+        if (!cfg.enabled || !getWebdavConfig().url) return;
+        const intervalMs = (cfg.interval || 6) * 3600 * 1000;
+        autoBackupTimer = setInterval(async function () {
+          const c = getAutoBackupConfig();
+          const last = c.lastBackup || 0;
+          if (Date.now() - last >= intervalMs) {
+            try {
+              const data = await buildBackupData();
+              const json = JSON.stringify(data, null, 2);
+              await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
+              c.lastBackup = Date.now();
+              saveAutoBackupConfig(c);
+              updateAutoBackupInfo();
+            } catch (e) { /* silent fail for auto backup */ }
+          }
+        }, 60 * 1000);
+      }
+
+      function stopAutoBackupTimer() {
+        if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; }
+      }
+
       // ─── Share ────────────────────────────
       let currentShareNoteId = null;
 
@@ -1746,11 +1843,6 @@ export const blogHomeHtml = `<!doctype html>
         els.mainFeed.classList.remove('hidden');
       };
 
-      els.exportBtn.onclick = function () {
-        const choice = confirm('点击"确定"导出 JSON，点击"取消"导出 Markdown');
-        exportAllNotes(choice ? 'json' : 'markdown');
-      };
-
       els.editorPinBtn.onclick = async function () {
         if (!state.editingId) { setStatus('请先保存笔记后再置顶'); return; }
         await api('/api/notes/' + encodeURIComponent(state.editingId) + '/pin', { method: 'PUT' });
@@ -1807,6 +1899,11 @@ export const blogHomeHtml = `<!doctype html>
           els.trashView.classList.add('hidden');
           els.mainFeed.classList.add('hidden');
           loadWebdavConfigToUI();
+          // Sync auto-backup UI
+          const abCfg = getAutoBackupConfig();
+          els.autoBackupToggle.checked = !!abCfg.enabled;
+          els.autoBackupInterval.value = String(abCfg.interval || 6);
+          updateAutoBackupInfo();
         } else {
           els.mainFeed.classList.remove('hidden');
         }
@@ -1865,6 +1962,27 @@ export const blogHomeHtml = `<!doctype html>
       els.closeImportModalBtn.onclick = function () { els.importModal.classList.add('hidden'); };
       els.confirmImportBtn.onclick = function () { confirmImport(); };
 
+      // Export buttons in settings
+      els.exportJsonBtn.onclick = function () { exportAllNotes('json'); };
+      els.exportMdBtn.onclick = function () { exportAllNotes('markdown'); };
+
+      // Auto backup controls
+      els.autoBackupToggle.onchange = function () {
+        const cfg = getAutoBackupConfig();
+        cfg.enabled = els.autoBackupToggle.checked;
+        cfg.interval = parseInt(els.autoBackupInterval.value) || 6;
+        saveAutoBackupConfig(cfg);
+        if (cfg.enabled) startAutoBackupTimer(); else stopAutoBackupTimer();
+        updateAutoBackupInfo();
+      };
+      els.autoBackupInterval.onchange = function () {
+        const cfg = getAutoBackupConfig();
+        cfg.interval = parseInt(els.autoBackupInterval.value) || 6;
+        saveAutoBackupConfig(cfg);
+        if (cfg.enabled) startAutoBackupTimer();
+        updateAutoBackupInfo();
+      };
+
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
           if (!els.importModal.classList.contains('hidden')) { els.importModal.classList.add('hidden'); return; }
@@ -1884,6 +2002,7 @@ export const blogHomeHtml = `<!doctype html>
       // ─── Init ─────────────────────────────
       updateSearchUi(); updateScrollUi(); updateModalUi();
       checkSession().catch(function () { showLogin(); });
+      startAutoBackupTimer();
     </script>
   </body>
 </html>`;
