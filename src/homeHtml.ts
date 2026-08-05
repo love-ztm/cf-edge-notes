@@ -17,6 +17,9 @@ export const blogHomeHtml = `<!doctype html>
         --bg: #f5f5f5;
         --panel: #ffffff;
         --panel-border: #e5e7eb;
+        --border: #e5e7eb;
+        --panel-bg: #ffffff;
+        --primary: #6366f1;
         --text: #111827;
         --muted: #6b7280;
         --accent: #6366f1;
@@ -37,6 +40,9 @@ export const blogHomeHtml = `<!doctype html>
         --bg: #09111f;
         --panel: rgba(15, 23, 42, 0.78);
         --panel-border: rgba(148, 163, 184, 0.18);
+        --border: rgba(148, 163, 184, 0.18);
+        --panel-bg: rgba(15, 23, 42, 0.78);
+        --primary: #7c93ff;
         --text: #e5eefb;
         --muted: #8aa0c2;
         --accent: #7c93ff;
@@ -58,6 +64,9 @@ export const blogHomeHtml = `<!doctype html>
           --bg: #09111f;
           --panel: rgba(15, 23, 42, 0.78);
           --panel-border: rgba(148, 163, 184, 0.18);
+          --border: rgba(148, 163, 184, 0.18);
+          --panel-bg: rgba(15, 23, 42, 0.78);
+          --primary: #7c93ff;
           --text: #e5eefb;
           --muted: #8aa0c2;
           --accent: #7c93ff;
@@ -417,8 +426,8 @@ export const blogHomeHtml = `<!doctype html>
       .toggle-lg .toggle-slider::before { height: 22px; width: 22px; }
       .toggle-lg input:checked + .toggle-slider::before { transform: translateX(24px); }
       .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
-      .toggle-label { font-size: 14px; font-weight: 700; }
-      .toggle-label.on { color: #22c55e; }
+      .toggle-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+      .toggle-label.on { color: var(--primary); }
       /* Day-of-week chips */
       .day-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
       .day-chip {
@@ -431,8 +440,6 @@ export const blogHomeHtml = `<!doctype html>
       .day-chip.active {
         background: var(--primary); color: #fff; border-color: var(--primary);
       }
-      .toggle-label { font-size: 13px; font-weight: 600; color: var(--muted); }
-      .toggle-label.on { color: var(--primary); }
 
       /* Share dialog */
       .share-dialog { padding: 24px; width: min(480px, 100%); }
