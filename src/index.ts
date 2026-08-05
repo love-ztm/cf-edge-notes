@@ -625,7 +625,7 @@ export default {
 		return json({ ok: false, error: 'not_found' }, 404);
 	},
 
-	async scheduled(event: ScheduledEvent, env: AppEnv, ctx: ExecutionContext) {
+	async scheduled(event: ScheduledController, env: AppEnv, ctx: ExecutionContext) {
 		// Cleanup expired shares and old trash (>30 days)
 		await ensureNotesSchema(env);
 		const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
