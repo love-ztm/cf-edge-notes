@@ -149,6 +149,11 @@ export const blogHomeHtml = `<!doctype html>
       .sidebar-tag-item:hover { background: var(--highlight-bg); }
       .sidebar-tag-item.active { background: var(--highlight-bg); color: var(--primary); font-weight: 600; }
       .sidebar-tag-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .tag-count {
+        margin-left: auto; font-size: 11px; line-height: 1;
+        color: var(--text-dim); background: var(--highlight-bg);
+        border-radius: 8px; padding: 3px 6px; flex-shrink: 0;
+      }
       .sidebar-footer {
         padding: 10px 8px;
         border-top: 1px solid var(--panel-border);
@@ -898,6 +903,8 @@ export const blogHomeHtml = `<!doctype html>
         tags: [],
         activeTagFilter: null,
         showingTrash: false,
+        composerSaved: false,
+        autoCreatedTagIds: [],
         theme: localStorage.getItem('theme') || 'auto'
       };
 
@@ -1102,7 +1109,8 @@ export const blogHomeHtml = `<!doctype html>
             decrypted.push({
               id: note.id, title: await decryptValue(note.title), content: await decryptValue(note.content),
               created_at: note.created_at, updated_at: note.updated_at,
-              is_pinned: note.is_pinned, deleted_at: note.deleted_at, encrypted: true
+              is_pinned: note.is_pinned, deleted_at: note.deleted_at, encrypted: true,
+              tags: note.tags || []
             });
           } catch (e) { /* skip failed */ }
         }
@@ -1207,6 +1215,12 @@ export const blogHomeHtml = `<!doctype html>
         const allItem = document.createElement('div');
         allItem.className = 'sidebar-tag-item' + (!state.activeTagFilter ? ' active' : '');
         allItem.innerHTML = '<span class="sidebar-tag-dot" style="background:var(--primary)"></span>全部';
+        if (state.vaultUnlocked) {
+          const allCount = document.createElement('span');
+          allCount.className = 'tag-count';
+          allCount.textContent = String(state.allNotes.length);
+          allItem.appendChild(allCount);
+        }
         allItem.onclick = function () {
           state.activeTagFilter = null;
           renderTagList(); refreshNotes();
@@ -1217,6 +1231,10 @@ export const blogHomeHtml = `<!doctype html>
           const el = document.createElement('div');
           el.className = 'sidebar-tag-item' + (state.activeTagFilter === tag.id ? ' active' : '');
           el.innerHTML = '<span class="sidebar-tag-dot" style="background:' + escapeHtml(tag.color) + '"></span>' + escapeHtml(tag.name);
+          const count = document.createElement('span');
+          count.className = 'tag-count';
+          count.textContent = String(tag.count || 0);
+          el.appendChild(count);
           el.onclick = function () {
             state.activeTagFilter = state.activeTagFilter === tag.id ? null : tag.id;
             renderTagList();
@@ -1225,7 +1243,7 @@ export const blogHomeHtml = `<!doctype html>
           const del = document.createElement('span');
           del.className = 'tag-del';
           del.textContent = '×';
-          del.style.cssText = 'margin-left:auto;font-size:13px;color:var(--danger);cursor:pointer;opacity:0.5;';
+          del.style.cssText = 'margin-left:6px;font-size:13px;color:var(--danger);cursor:pointer;opacity:0.5;';
           del.onclick = async function (e) {
             e.stopPropagation();
             if (!confirm('删除标签 "' + tag.name + '"？')) return;
@@ -1264,6 +1282,137 @@ export const blogHomeHtml = `<!doctype html>
         els.editorTagSelect.querySelectorAll('.btn').forEach(function (b) {
           b.classList.toggle('active', tagIds.includes(b.dataset.tagId));
         });
+      }
+
+      // ─── Auto Tag Matching ──────────────────
+      let autoTagTimer = null;
+
+      function scheduleAutoTag() {
+        clearTimeout(autoTagTimer);
+        autoTagTimer = setTimeout(runAutoTag, 900);
+      }
+
+      const TAG_PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#84cc16'];
+      const TAG_STOPWORDS = new Set([
+        '我们','你们','他们','这个','那个','一个','一些','什么','因为','所以','但是','而且','如果','虽然','然后',
+        '可以','没有','就是','还是','以及','不是','自己','现在','已经','真的','可能','时候','东西','地方','今天',
+        '明天','昨天','需要','知道','觉得','希望','应该','这么','那样','非常','比较','开始','继续','最后','这样',
+        '那些','这些','比如','其实','感觉','有点','很多','很少','一直','并且','或者','对于','关于','通过','为了',
+        '不要','不会','不能','怎么','怎样','请问','大家','朋友','什么','每次','非常','真的','工作','生活','问题',
+        'the','and','that','this','with','from','have','you','are','was','were','for','not','but','can','just','very'
+      ]);
+
+      // Extract keyword candidates from title+content (latin terms + CJK segments/bigrams)
+      function extractTagCandidates(text, titleText) {
+        const titleLower = String(titleText || '').toLowerCase();
+        const out = [];
+        const seen = new Set();
+        function add(name) {
+          const n = String(name).trim().toLowerCase();
+          if (n.length < 2 || n.length > 12) return;
+          if (TAG_STOPWORDS.has(n)) return;
+          // drop candidates that start with a stopword ("今天用" starts with 今天)
+          for (const sw of TAG_STOPWORDS) {
+            if (n.length > sw.length && n.startsWith(sw)) return;
+          }
+          // require at least one CJK or alphanumeric char (pure punctuation/emoji rejected)
+          if (!/[\u4e00-\u9fff]/.test(n) && !/[a-zA-Z0-9]/.test(n)) return;
+          if (seen.has(n)) return;
+          seen.add(n);
+          out.push(String(name).trim());
+        }
+        // Latin / tech terms (case preserved as typed)
+        const latin = text.match(/[a-zA-Z][a-zA-Z0-9_.-]{1,19}/g) || [];
+        latin.forEach(add);
+        // CJK segments split on non-CJK delimiters
+        const segs = text.split(/[^a-zA-Z0-9\u4e00-\u9fff]+/).filter(function (s) {
+          return /[\u4e00-\u9fff]/.test(s) && s.length >= 2 && s.length <= 8 && !TAG_STOPWORDS.has(s.toLowerCase());
+        });
+        const segFreq = new Map();
+        const gramFreq = new Map();
+        segs.forEach(function (s) {
+          segFreq.set(s, (segFreq.get(s) || 0) + 1);
+          for (let i = 0; i <= s.length - 2; i++) {
+            const g = s.slice(i, i + 2);
+            if (/^[\u4e00-\u9fff]{2}$/.test(g) && !TAG_STOPWORDS.has(g)) {
+              gramFreq.set(g, (gramFreq.get(g) || 0) + 1);
+            }
+          }
+        });
+        const scored = [];
+        segFreq.forEach(function (c, s) {
+          // short segments qualify at any frequency; long sentence-like ones need repeats
+          // (title segments qualify once even when longer)
+          const inTitle = titleLower.includes(s.toLowerCase());
+          if (c >= 2 || s.length <= 4 || (inTitle && s.length <= 8)) {
+            scored.push({ name: s, score: c * 3 + s.length + (inTitle ? 2 : 0) });
+          }
+        });
+        // bigrams need to repeat at least 3x to be meaningful ("记应" adjacent pairs are noise)
+        gramFreq.forEach(function (c, g) { if (c >= 3) scored.push({ name: g, score: c * 2 }); });
+        scored.sort(function (a, b) { return b.score - a.score; });
+        scored.forEach(function (item) { add(item.name); });
+        // drop candidates that are a substring of a longer one (keep "健身打卡" over 健身/身打/打卡)
+        const kept = out.filter(function (c) {
+          const lc = c.toLowerCase();
+          return !out.some(function (other) {
+            const lo = other.toLowerCase();
+            return lo.length > lc.length && lo.includes(lc);
+          });
+        });
+        return kept.slice(0, 10);
+      }
+
+      function unionTagIds(a, b) {
+        const s = new Set(a);
+        b.forEach(function (id) { s.add(id); });
+        return Array.from(s);
+      }
+
+      // Auto-match existing tags whose name appears in the text, and
+      // auto-create new tags from frequent keywords (tracked for cleanup)
+      async function runAutoTag() {
+        if (!els.editorPanel.classList.contains('open')) return;
+        const raw = els.editorTitle.value + '\\n' + els.editorContent.value;
+        const text = raw.toLowerCase();
+        if (text.trim().length < 6) return;
+
+        const wanted = new Set(getEditorSelectedTagIds());
+        // 1) Match existing tags by substring
+        state.tags.forEach(function (t) {
+          if (t.name && text.includes(t.name.toLowerCase())) wanted.add(t.id);
+        });
+        // 2) Auto-create new tags from frequent keywords
+        const existingNames = state.tags.map(function (t) { return t.name.toLowerCase(); });
+        const fresh = extractTagCandidates(raw, els.editorTitle.value).filter(function (name) {
+          const n = name.toLowerCase();
+          if (existingNames.includes(n)) return false;
+          // drop candidates that contain an existing tag name (redundant: "部署很快" vs 部署)
+          return !existingNames.some(function (en) { return en.length >= 2 && en.length < n.length && n.includes(en); });
+        });
+        const created = [];
+        for (const name of fresh.slice(0, 5)) {
+          try {
+            const data = await api('/api/tags', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ name: name.length > 10 ? name.slice(0, 10) : name, color: TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)] })
+            });
+            if (data.tag) {
+              state.tags.push(data.tag);
+              state.autoCreatedTagIds.push(data.tag.id);
+              wanted.add(data.tag.id);
+              created.push(data.tag.name);
+            }
+          } catch (e) { /* ignore per-tag failures */ }
+        }
+        if (created.length) {
+          renderTagList();
+          renderEditorTagSelect();
+          setEditorTagSelection(Array.from(wanted));
+          setStatus('✨ 自动生成标签: ' + created.join('、'));
+        } else {
+          setEditorTagSelection(Array.from(wanted));
+        }
       }
 
       // ─── Note Tags for Card ───────────────
@@ -1389,6 +1538,19 @@ export const blogHomeHtml = `<!doctype html>
             card.appendChild(meta);
             card.appendChild(actions);
             card.appendChild(title);
+
+            if (note.tags && note.tags.length) {
+              const tagsRow = document.createElement('div');
+              tagsRow.className = 'note-tags';
+              note.tags.forEach(function (t) {
+                const pill = document.createElement('span');
+                pill.className = 'tag-pill';
+                pill.innerHTML = '<span class="tag-dot" style="background:' + escapeHtml(t.color) + '"></span>' + escapeHtml(t.name);
+                tagsRow.appendChild(pill);
+              });
+              card.appendChild(tagsRow);
+            }
+
             card.appendChild(bodyWrap);
 
             if (dc.canExpand) {
@@ -1437,6 +1599,7 @@ export const blogHomeHtml = `<!doctype html>
             setStatus('已恢复');
             loadTrash();
             refreshNotes();
+            refreshTags();
           };
           const permBtn = document.createElement('button');
           permBtn.type = 'button';
@@ -1485,6 +1648,8 @@ export const blogHomeHtml = `<!doctype html>
 
       function openComposer(note) {
         state.editingId = note ? note.id : null;
+        state.composerSaved = false;
+        state.autoCreatedTagIds = [];
         els.modalTitle.textContent = note ? '编辑笔记' : '新建笔记';
         els.editorTitle.value = note ? note.title : '';
         els.editorContent.value = note ? note.content : '';
@@ -1502,17 +1667,26 @@ export const blogHomeHtml = `<!doctype html>
 
       async function loadNoteTagsForEditor(noteId) {
         try {
-          const allTagData = await api('/api/tags');
-          const allTags = allTagData.tags || [];
-          const noteTagData = await api('/api/notes/' + encodeURIComponent(noteId) + '/shares');
-          setEditorTagSelection([]);
+          const noteTagData = await api('/api/notes/' + encodeURIComponent(noteId) + '/tags');
+          setEditorTagSelection((noteTagData.tags || []).map(function (t) { return t.id; }));
         } catch (e) { setEditorTagSelection([]); }
       }
 
-      function closeComposer() {
+      async function closeComposer() {
+        const orphanIds = state.autoCreatedTagIds.slice();
+        state.autoCreatedTagIds = [];
+        clearTimeout(autoTagTimer);
         els.editorPanel.classList.remove('open');
         state.editingId = null;
         updateModalUi();
+        // If the note was never saved, remove auto-generated tags that have no note attached
+        if (!state.composerSaved && orphanIds.length) {
+          await Promise.all(orphanIds.map(function (id) {
+            return api('/api/tags/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
+          }));
+          refreshTags();
+        }
+        state.composerSaved = false;
       }
 
       async function saveComposer() {
@@ -1535,16 +1709,18 @@ export const blogHomeHtml = `<!doctype html>
             body: JSON.stringify({ title: encTitle, content: encContent })
           });
         }
-        // Save tag associations
+        // Save tag associations (PUT with empty array clears all tags)
         const tagIds = getEditorSelectedTagIds();
-        if (data.note && tagIds.length) {
+        if (data.note) {
           await api('/api/notes/' + encodeURIComponent(data.note.id) + '/tags', {
             method: 'PUT', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ tagIds })
           });
         }
+        state.composerSaved = true;
         closeComposer();
         await refreshNotes();
+        await refreshTags();
         setStatus('已保存');
       }
 
@@ -1553,6 +1729,7 @@ export const blogHomeHtml = `<!doctype html>
         if (!confirm('移入回收站？')) return;
         await api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' });
         await refreshNotes();
+        await refreshTags();
         setStatus('已移入回收站');
       }
 
@@ -2061,6 +2238,8 @@ export const blogHomeHtml = `<!doctype html>
       };
 
       els.newBtn.onclick = function () { openComposer(null); };
+      els.editorTitle.addEventListener('input', scheduleAutoTag);
+      els.editorContent.addEventListener('input', scheduleAutoTag);
 
       // ─── Sidebar navigation ──────────────
       function switchView(view) {

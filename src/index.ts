@@ -102,6 +102,26 @@ async function listNotes(env: AppEnv, vaultId: string, includeDeleted = false) {
 	return result.results ?? [];
 }
 
+// Attach plaintext tag info ({id,name,color}) to each note for card rendering
+async function attachNoteTags(env: AppEnv, vaultId: string, notes: Note[]) {
+	if (!notes.length) return notes;
+	const rels = await env.DB.prepare(
+		`SELECT nt.note_id, t.id, t.name, t.color
+		 FROM note_tags nt
+		 JOIN tags t ON t.id = nt.tag_id
+		 JOIN notes n ON n.id = nt.note_id
+		 WHERE n.vault_id = ?`
+	)
+		.bind(vaultId)
+		.all<{ note_id: string; id: string; name: string; color: string }>();
+	const map = new Map<string, Array<{ id: string; name: string; color: string }>>();
+	for (const r of rels.results ?? []) {
+		if (!map.has(r.note_id)) map.set(r.note_id, []);
+		map.get(r.note_id)!.push({ id: r.id, name: r.name, color: r.color });
+	}
+	return notes.map((n) => ({ ...n, tags: map.get(n.id) ?? [] }));
+}
+
 async function listTrashNotes(env: AppEnv, vaultId: string) {
 	const result = await env.DB.prepare(
 		`SELECT id, title, content, created_at, updated_at, is_pinned, deleted_at
@@ -422,7 +442,7 @@ export default {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
 			const tagFilter = url.searchParams.get('tag');
-			let notes = await listNotes(env, vaultId);
+			let notes = await attachNoteTags(env, vaultId, await listNotes(env, vaultId));
 
 			if (tagFilter) {
 				const taggedNoteIds = await env.DB.prepare(
@@ -456,7 +476,7 @@ export default {
 
 			// Check for sub-routes: trash, export, :id/pin, :id/tags, :id/share, :id/restore, :id/permanent
 			if (rest === 'trash' && request.method === 'GET') {
-				return json({ ok: true, notes: await listTrashNotes(env, vaultId) });
+				return json({ ok: true, notes: await attachNoteTags(env, vaultId, await listTrashNotes(env, vaultId)) });
 			}
 
 			if (rest === 'export' && request.method === 'GET') {
@@ -642,7 +662,12 @@ export default {
 		if (url.pathname === '/api/tags' && request.method === 'GET') {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
-			const tags = await env.DB.prepare(`SELECT * FROM tags WHERE vault_id = ? ORDER BY name`).bind(vaultId).all<Tag>();
+			const tags = await env.DB.prepare(
+				`SELECT t.id, t.vault_id, t.name, t.color, t.created_at,
+					(SELECT COUNT(*) FROM note_tags nt JOIN notes n ON n.id = nt.note_id
+					 WHERE nt.tag_id = t.id AND n.vault_id = t.vault_id AND n.deleted_at IS NULL) AS count
+				 FROM tags t WHERE t.vault_id = ? ORDER BY t.name`
+			).bind(vaultId).all<Tag & { count: number }>();
 			return json({ ok: true, tags: tags.results ?? [] });
 		}
 
