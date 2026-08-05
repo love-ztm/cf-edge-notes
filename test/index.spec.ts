@@ -32,7 +32,7 @@ describe("private-notes worker", () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toContain("text/html");
-		expect(await response.text()).toContain("Private Notes");
+		expect(await response.text()).toContain("Edge Notes");
 	});
 
 	it("reports an authenticated session when password auth is not configured", async () => {

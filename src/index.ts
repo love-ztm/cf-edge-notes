@@ -279,7 +279,7 @@ function sharePageHtml(title: string, content: string, createdAt: number, update
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>${safeTitle} - Private Notes</title>
+<title>${safeTitle} - Edge Notes</title>
 <meta name="theme-color" content="#07c160"/>
 <style>
 :root { color-scheme: light; --bg:#f5f5f5; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280; --accent:#07c160; --shadow:0 8px 24px rgba(15,23,42,.06); }
@@ -300,7 +300,7 @@ h1{margin:0 0 8px;font-size:26px;line-height:1.2}
 </head>
 <body>
 <div class="page">
-<div class="brand"><div class="brand-icon">📝</div>Private Notes</div>
+<div class="brand"><div class="brand-icon">📝</div>Edge Notes</div>
 <div class="card">
 <h1>${safeTitle}</h1>
 <div class="meta">
@@ -309,7 +309,7 @@ h1{margin:0 0 8px;font-size:26px;line-height:1.2}
 </div>
 <div class="content">${safeContent}</div>
 </div>
-<div class="footer">Shared via Private Notes · E2EE</div>
+<div class="footer">Shared via Edge Notes · E2EE</div>
 </div>
 </body>
 </html>`;

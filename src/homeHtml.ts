@@ -3,7 +3,7 @@ export const blogHomeHtml = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Private Notes</title>
+    <title>Edge Notes</title>
     <meta name="theme-color" content="#07c160" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -305,7 +305,7 @@ export const blogHomeHtml = `<!doctype html>
           <div class="login-brand">
             <div class="login-brand-icon">📝</div>
             <div>
-              <div class="login-mini">Private Notes · E2EE</div>
+              <div class="login-mini">Edge Notes · E2EE</div>
             </div>
           </div>
           <div id="unlockBadge" class="unlock-badge hidden">🔒 已通过访问验证</div>

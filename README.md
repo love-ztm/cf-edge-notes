@@ -1,4 +1,4 @@
-# Private Notes
+# Edge Notes
 
 一个部署在 Cloudflare Workers + D1 上的端到端加密私人笔记应用。
 
