@@ -235,6 +235,20 @@ export const blogHomeHtml = `<!doctype html>
       }
       .editor-textarea::placeholder { color: var(--muted); opacity: 0.5; }
       .editor-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+      .editor-tags .btn { border: 1px solid var(--panel-border); }
+      .editor-tags .btn.active {
+        background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+      }
+      .editor-tags .btn.active .tag-dot { background: #fff !important; }
+      .editor-tags .btn.active:hover {
+        background: var(--primary); border-color: var(--primary); opacity: 0.88;
+      }
+      .editor-tags-head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin: 12px 0 6px;
+      }
+      .editor-tags-head .label { font-size: 12px; color: var(--text-dim); font-weight: 600; }
       .editor-actions {
         display: flex; gap: 8px; justify-content: flex-end;
         padding: 14px 20px;
@@ -828,6 +842,10 @@ export const blogHomeHtml = `<!doctype html>
                   📷 点击或拖拽图片到这里上传（最大 5MB）
                   <input id="imageFileInput" type="file" accept="image/*" style="display:none" />
                 </div>
+                <div class="editor-tags-head">
+                  <span class="label">标签</span>
+                  <button id="clearTagBtn" class="btn small secondary" type="button">清除已选</button>
+                </div>
                 <div id="editorTagSelect" class="editor-tags"></div>
               </div>
               <div class="editor-actions">
@@ -948,6 +966,7 @@ export const blogHomeHtml = `<!doctype html>
         editorShareBtn: document.getElementById('editorShareBtn'),
         editorExportBtn: document.getElementById('editorExportBtn'),
         editorTagSelect: document.getElementById('editorTagSelect'),
+        clearTagBtn: document.getElementById('clearTagBtn'),
         insertImageBtn: document.getElementById('insertImageBtn'),
         imageUploadArea: document.getElementById('imageUploadArea'),
         imageFileInput: document.getElementById('imageFileInput'),
@@ -1608,8 +1627,10 @@ export const blogHomeHtml = `<!doctype html>
           permBtn.onclick = async function () {
             if (!confirm('永久删除此笔记？此操作不可恢复！')) return;
             await api('/api/notes/' + encodeURIComponent(note.id) + '/permanent', { method: 'DELETE' });
+            await cleanupZeroTags();
             setStatus('已永久删除');
             loadTrash();
+            refreshTags();
           };
           actions.appendChild(restoreBtn);
           actions.appendChild(permBtn);
@@ -1673,20 +1694,22 @@ export const blogHomeHtml = `<!doctype html>
       }
 
       async function closeComposer() {
-        const orphanIds = state.autoCreatedTagIds.slice();
-        state.autoCreatedTagIds = [];
         clearTimeout(autoTagTimer);
         els.editorPanel.classList.remove('open');
         state.editingId = null;
         updateModalUi();
-        // If the note was never saved, remove auto-generated tags that have no note attached
-        if (!state.composerSaved && orphanIds.length) {
-          await Promise.all(orphanIds.map(function (id) {
-            return api('/api/tags/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
-          }));
+        // If the note was never saved, drop tags auto-created this session that have no note attached
+        if (!state.composerSaved && state.autoCreatedTagIds.length) {
+          await cleanupZeroTags();
           refreshTags();
         }
+        state.autoCreatedTagIds = [];
         state.composerSaved = false;
+      }
+
+      // Delete tags no longer referenced by any note (count-0 tags)
+      async function cleanupZeroTags() {
+        try { await api('/api/tags/cleanup', { method: 'POST' }); } catch (e) { /* silent */ }
       }
 
       async function saveComposer() {
@@ -1719,6 +1742,7 @@ export const blogHomeHtml = `<!doctype html>
         }
         state.composerSaved = true;
         closeComposer();
+        await cleanupZeroTags();
         await refreshNotes();
         await refreshTags();
         setStatus('已保存');
@@ -1728,6 +1752,7 @@ export const blogHomeHtml = `<!doctype html>
         if (!id) { setStatus('没有可删除的笔记'); return; }
         if (!confirm('移入回收站？')) return;
         await api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' });
+        await cleanupZeroTags();
         await refreshNotes();
         await refreshTags();
         setStatus('已移入回收站');
@@ -2291,6 +2316,12 @@ export const blogHomeHtml = `<!doctype html>
       els.closeModalBtn.onclick = closeComposer;
       els.cancelBtn.onclick = closeComposer;
       els.saveBtn.onclick = function () { saveComposer().catch(function (e) { setStatus(e.message || '保存失败'); }); };
+
+      // One-click clear of all selected tags in the editor
+      els.clearTagBtn.onclick = function () {
+        setEditorTagSelection([]);
+        setStatus('已清除全部标签');
+      };
 
       els.themeToggleBtn.onclick = toggleTheme;
 

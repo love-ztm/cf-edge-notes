@@ -683,6 +683,21 @@ export default {
 			return json({ ok: true, tag: { id, vault_id: vaultId, name, color, created_at: Date.now() } }, 201);
 		}
 
+		if (url.pathname === '/api/tags/cleanup' && request.method === 'POST') {
+			await ensureNotesSchema(env);
+			const vaultId = await getAuthedVaultId(request, env);
+			// Delete tags with zero active-note references (count-0 tags) so the sidebar stays tidy
+			const result = await env.DB.prepare(
+				`DELETE FROM tags
+				 WHERE vault_id = ? AND id NOT IN (
+				   SELECT nt.tag_id FROM note_tags nt
+				   JOIN notes n ON n.id = nt.note_id
+				   WHERE n.vault_id = ? AND n.deleted_at IS NULL
+				 )`
+			).bind(vaultId, vaultId).run();
+			return json({ ok: true, deleted: result.meta.changes ?? 0 });
+		}
+
 		if (url.pathname.startsWith('/api/tags/')) {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
