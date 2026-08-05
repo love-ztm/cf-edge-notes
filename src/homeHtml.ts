@@ -1743,7 +1743,7 @@ export const blogHomeHtml = `<!doctype html>
           var text = await res.text();
           // Parse PROPFIND XML to find backup files
           var files = [];
-          var re = /<d:href>([^<]*backup-[^<]*\.json)<\/d:href>/gi;
+          var re = /<d:href>([^<]*backup-[^<]*\.json)<\\/d:href>/gi;
           var m;
           while ((m = re.exec(text)) !== null) {
             var name = m[1].split('/').pop();
