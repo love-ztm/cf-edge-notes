@@ -1572,7 +1572,7 @@ export const blogHomeHtml = `<!doctype html>
           const data = await buildBackupData();
           const json = JSON.stringify(data, null, 2);
           const now = new Date();
-          const fname = 'edge-notes/backup-' + formatDate(now) + '-' + formatTime(now) + '.json';
+          const fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
           await webdavRequest(fname, 'PUT', json, 'application/json');
           // Also update latest for easy restore
           await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
@@ -1692,12 +1692,12 @@ export const blogHomeHtml = `<!doctype html>
         checks.forEach(function (c) { c.checked = days.indexOf(parseInt(c.value)) >= 0; });
       }
 
-      function formatDate(d) {
+      function backupDateStr(d) {
         var y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
         return y + '-' + m + '-' + dd;
       }
 
-      function formatTime(d) {
+      function backupTimeStr(d) {
         return String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0');
       }
 
@@ -1773,7 +1773,7 @@ export const blogHomeHtml = `<!doctype html>
               var json = JSON.stringify(data, null, 2);
               // Save with date-time filename
               var now = new Date();
-              var fname = 'edge-notes/backup-' + formatDate(now) + '-' + formatTime(now) + '.json';
+              var fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
               await webdavRequest(fname, 'PUT', json, 'application/json');
               // Also update backup-latest.json for easy restore
               await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
