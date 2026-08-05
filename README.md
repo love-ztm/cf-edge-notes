@@ -1,25 +1,56 @@
 # Private Notes
 
-一个部署在 Cloudflare Workers + D1 上的简洁私人笔记。
+一个部署在 Cloudflare Workers + D1 上的端到端加密私人笔记应用。
 
-- 适合单人使用
-- 文本优先，支持搜索
-- 手机浏览器可直接使用
-- 已做基础 PWA 支持，可添加到主屏幕
-- 浏览器端端到端加密（E2EE）
-- 多密码登录，不同密码进入独立数据仓库
+- 🔒 浏览器端端到端加密（AES-GCM + PBKDF2），密码不离开浏览器
+- 🗂️ 多密码多数据仓库隔离，不同密码进入独立 vault
+- 📱 PWA 支持，手机可添加到主屏幕
+- ☁️ 基于 Cloudflare Workers + D1 + R2，全球边缘部署
+- 🌙 深色 / 浅色主题切换
 
-## 一键部署到 Cloudflare
+## 功能一览
 
-当前仓库地址：
+### 核心功能
+- **端到端加密** — 笔记在浏览器本地加密后上传，服务端只存储密文
+- **多密码隔离** — 不同密码登录进入不同数据仓库，彼此完全隔离
+- **全文搜索** — 支持标题和正文关键词搜索
+- **笔记置顶** — 重要笔记一键置顶，置顶笔记始终显示在最前
 
-- `https://github.com/tao-t356/private-notes`
+### 标签管理
+- 创建自定义标签并设置颜色
+- 为笔记添加多个标签
+- 侧边栏按标签筛选笔记
 
-可以直接使用下面的一键部署按钮。Cloudflare 会根据 `wrangler.jsonc` 自动创建/绑定 D1，并根据 `.dev.vars.example` 提示填写 `APP_PASSWORD`、可选的 `APP_PASSWORDS` 和 `COOKIE_SECRET`；发布脚本会先执行 D1 migrations 再部署 Worker：
+### 图片上传
+- 支持编辑器内粘贴、拖拽上传图片
+- 图片加密后存储到 Cloudflare R2
+- 笔记内图片预览
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tao-t356/private-notes)
+### 笔记分享
+- 为笔记生成公开分享链接（无需登录即可查看）
+- 可设置分享链接过期时间
+- 随时撤销分享
 
-如果你 fork 了这个仓库，再把按钮里的地址改成你自己的 fork 地址。
+### 导出
+- 单条笔记导出为 Markdown
+- 全部笔记导出为 JSON 或 Markdown
+- 一键备份所有数据
+
+### 回收站
+- 删除的笔记进入回收站，可随时恢复
+- 支持永久删除
+- 定时自动清理过期回收站内容
+
+### 主题切换
+- 深色 / 浅色模式一键切换
+- 自动跟随系统偏好
+- 用户选择持久化到 localStorage
+
+## 一键部署
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/love-ztm/cf-notes)
+
+Cloudflare 会自动创建 D1 数据库并部署 Worker。部署后需要在 Workers 设置中添加 R2 Bucket 绑定（binding 名称：`IMAGES`）。
 
 ## 手动部署
 
@@ -41,122 +72,103 @@ npx wrangler login
 npx wrangler d1 create private-notes-db
 ```
 
-把返回的 `database_id` 填到 `wrangler.jsonc` 里的 `d1_databases` 配置中。
+把返回的 `database_id` 填到 `wrangler.jsonc` 中。
 
-### 4. 执行数据库迁移
+### 4. 创建 R2 Bucket
+
+```bash
+npx wrangler r2 bucket create cf-notes-images
+```
+
+### 5. 执行数据库迁移
 
 ```bash
 npx wrangler d1 migrations apply DB --remote
 ```
 
-### 5. 设置 secrets
+### 6. 设置环境变量
 
 ```bash
 npx wrangler secret put APP_PASSWORD
-# 可选：多个隔离数据仓库，格式 vault_id=password,guest=another-password
-npx wrangler secret put APP_PASSWORDS
 npx wrangler secret put COOKIE_SECRET
+# 可选：多数据仓库密码
+npx wrangler secret put APP_PASSWORDS
 ```
 
-说明：
+| 变量 | 说明 |
+|------|------|
+| `APP_PASSWORD` | 默认 vault 密码，生产环境务必修改 |
+| `COOKIE_SECRET` | 会话签名密钥，建议 32 字符以上随机字符串 |
+| `APP_PASSWORDS` | 可选，格式 `vault_id=password,guest=another-password` |
 
-- `APP_PASSWORD`：默认数据仓库密码；本地示例默认是 `facker668`，生产环境建议改成你自己的强密码。
-- `APP_PASSWORDS`：可选，多数据仓库密码映射，格式 `vault_id=password,guest=another-password`。输入不同密码会进入不同 vault，只能看到对应数据。
-- `COOKIE_SECRET`：任意长随机字符串，建议 32 字符以上
-
-### 6. 发布
+### 7. 部署
 
 ```bash
 npm run deploy
 ```
 
-部署完成后会得到一个 `workers.dev` 地址。
-
-## 本地开发
-
-复制一份本地变量模板：
-
-```bash
-cp .dev.vars.example .dev.vars
-```
-
-Windows PowerShell 也可以用：
-
-```powershell
-Copy-Item .dev.vars.example .dev.vars
-```
-
-然后把里面的值改成你自己的。
-
-启动本地开发：
-
-```bash
-npx wrangler dev
-```
+部署完成后获得 `*.workers.dev` 地址。
 
 ## GitHub 自动部署
 
-除了 Deploy Button，也可以直接在 Cloudflare Dashboard 里：
+1. 打开 Cloudflare Dashboard → **Workers & Pages**
+2. 连接 GitHub 仓库 `love-ztm/cf-notes`
+3. 开启 Workers Builds
 
-1. 打开 **Workers & Pages**
-2. 连接 GitHub 仓库
-3. 选择这个项目
-4. 开启 Workers Builds
+以后 `git push` 到 main 分支会自动部署。
 
-以后 `git push` 就会自动部署。
+## 本地开发
+
+```bash
+cp .dev.vars.example .dev.vars
+# 编辑 .dev.vars 设置本地密码
+npx wrangler dev
+```
 
 ## 手机端使用
 
-### iPhone
+### iPhone (Safari)
 
-1. 用 Safari 打开站点
-2. 登录
-3. 分享 → **添加到主屏幕**
+1. 打开站点并登录
+2. 点击分享按钮 → **添加到主屏幕**
 
-### Android
+### Android (Chrome)
 
-1. 用 Chrome 打开站点
-2. 登录
-3. 菜单 → **添加到主屏幕** / **安装应用**
-
-## 主要功能
-
-- 登录保护
-- 多密码多数据仓库隔离
-- 浏览器端端到端加密
-- 笔记新建 / 编辑 / 删除
-- 本地标题和正文搜索
-- 按日期分组
-- 默认折叠长正文，支持展开
-- 一键复制全文
-- 手机端优化
+1. 打开站点并登录
+2. 菜单 → **添加到主屏幕** / **安装应用**
 
 ## 项目结构
 
 ```text
-src/
-  homeHtml.ts   # 前端页面模板
-  index.ts      # Worker / API / PWA 路由
-migrations/
-  0001_init.sql
-  0002_notes_fts.sql
-wrangler.jsonc
+cf-notes/
+├── src/
+│   ├── index.ts          # Worker 入口 / API 路由 / 分享页面
+│   ├── homeHtml.ts       # 前端单页应用（HTML + CSS + JS）
+│   └── auth.ts           # 认证与会话管理
+├── migrations/
+│   ├── 0001_init.sql            # notes 表初始化
+│   ├── 0002_notes_fts.sql       # 全文搜索索引
+│   ├── 0003_app_meta.sql        # 应用元数据表
+│   ├── 0004_auth_rate_limits.sql # 登录频率限制
+│   ├── 0005_note_vaults.sql     # 多 vault 支持
+│   ├── 0006_add_is_pinned.sql   # 笔记置顶
+│   ├── 0007_add_tags.sql        # 标签系统
+│   ├── 0008_add_trash.sql       # 回收站
+│   ├── 0009_add_images.sql      # 图片上传
+│   └── 0010_add_sharing.sql     # 笔记分享
+├── wrangler.jsonc         # Cloudflare Workers 配置
+├── .dev.vars.example      # 本地开发环境变量模板
+└── package.json
 ```
 
-## 当前限制
+## 技术栈
 
-- 不支持图片 / 附件上传
-- 更适合单用户而不是多人协作
+- **运行时**: Cloudflare Workers (V8 Isolates)
+- **数据库**: Cloudflare D1 (SQLite)
+- **存储**: Cloudflare R2 (图片附件)
+- **加密**: Web Crypto API (AES-GCM + PBKDF2)
+- **前端**: 原生 HTML/CSS/JS，无框架依赖
 
-## 推荐后续增强
+## License
 
-- 导出备份
-- 搜索历史
-- 图片链接预览
-- 端到端加密版本
-
-
-
-
-
-
+MIT

@@ -681,6 +681,7 @@ export const blogHomeHtml = `<!doctype html>
       function showApp() {
         if (state.sessionAuthenticated && state.vaultUnlocked) {
           els.loginView.classList.add('hidden');
+          els.appView.classList.remove('hidden');
           els.appView.classList.remove('app-dimmed');
         } else { showLogin(); }
         updateVaultUi();
