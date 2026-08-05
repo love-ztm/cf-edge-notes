@@ -19,6 +19,7 @@ type AppEnv = Env & {
 	APP_PASSWORD?: string;
 	APP_PASSWORDS?: string;
 	COOKIE_SECRET?: string;
+	IMAGES?: R2Bucket;
 };
 
 type Note = {
@@ -28,8 +29,26 @@ type Note = {
 	created_at: number;
 	updated_at: number;
 	vault_id?: string;
+	is_pinned?: number;
+	deleted_at?: number | null;
 };
 
+type Tag = {
+	id: string;
+	vault_id: string;
+	name: string;
+	color: string;
+	created_at: number;
+};
+
+type NoteShare = {
+	token: string;
+	note_id: string;
+	vault_id: string;
+	created_at: number;
+	expires_at: number | null;
+	is_active: number;
+};
 
 function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
 	return new Response(JSON.stringify(data, null, 2), {
@@ -63,13 +82,33 @@ function decodeHeaderValue(value: string) {
 	}
 }
 
-async function listNotes(env: AppEnv, vaultId: string) {
+// ─── Notes CRUD ───────────────────────────────────────────
+
+async function listNotes(env: AppEnv, vaultId: string, includeDeleted = false) {
+	let whereClause = 'vault_id = ?';
+	if (!includeDeleted) {
+		whereClause += ' AND deleted_at IS NULL';
+	}
 	const result = await env.DB.prepare(
-		`SELECT id, title, content, created_at, updated_at
+		`SELECT id, title, content, created_at, updated_at, is_pinned, deleted_at
 		 FROM notes
-		 WHERE vault_id = ?
-		 ORDER BY updated_at DESC
+		 WHERE ${whereClause}
+		 ORDER BY is_pinned DESC, updated_at DESC
 		 LIMIT 1000`
+	)
+		.bind(vaultId)
+		.all<Note>();
+
+	return result.results ?? [];
+}
+
+async function listTrashNotes(env: AppEnv, vaultId: string) {
+	const result = await env.DB.prepare(
+		`SELECT id, title, content, created_at, updated_at, is_pinned, deleted_at
+		 FROM notes
+		 WHERE vault_id = ? AND deleted_at IS NOT NULL
+		 ORDER BY deleted_at DESC
+		 LIMIT 500`
 	)
 		.bind(vaultId)
 		.all<Note>();
@@ -79,7 +118,7 @@ async function listNotes(env: AppEnv, vaultId: string) {
 
 async function getNote(env: AppEnv, id: string, vaultId: string) {
 	return env.DB.prepare(
-		`SELECT id, title, content, created_at, updated_at
+		`SELECT id, title, content, created_at, updated_at, is_pinned, deleted_at
 		 FROM notes
 		 WHERE id = ? AND vault_id = ?
 		 LIMIT 1`
@@ -110,71 +149,74 @@ async function ensureNotesSchema(env: AppEnv) {
 	).run();
 
 	const columns = await env.DB.prepare('PRAGMA table_info(notes)').all<{ name: string }>();
-	if (!(columns.results ?? []).some((column) => column.name === 'vault_id')) {
+	const colNames = (columns.results ?? []).map((c) => c.name);
+
+	if (!colNames.includes('vault_id')) {
 		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN vault_id TEXT NOT NULL DEFAULT 'default'`).run();
 	}
+	if (!colNames.includes('is_pinned')) {
+		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`).run();
+	}
+	if (!colNames.includes('deleted_at')) {
+		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN deleted_at INTEGER DEFAULT NULL`).run();
+	}
+
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_vault_updated_at ON notes(vault_id, updated_at DESC)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_pinned ON notes(vault_id, is_pinned DESC, updated_at DESC)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_trash ON notes(vault_id, deleted_at)`).run();
 
 	await env.DB.prepare(
-		`CREATE INDEX IF NOT EXISTS idx_notes_updated_at
-		 ON notes(updated_at DESC)`
+		`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(id UNINDEXED, title, content)`
 	).run();
 
-	await env.DB.prepare(
-		`CREATE INDEX IF NOT EXISTS idx_notes_vault_updated_at
-		 ON notes(vault_id, updated_at DESC)`
-	).run();
-
-	await env.DB.prepare(
-		`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-			id UNINDEXED,
-			title,
-			content
-		)`
-	).run();
-
-	await env.DB.prepare(
-		`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-			INSERT INTO notes_fts (id, title, content)
-			VALUES (new.id, new.title, new.content);
-		END`
-	).run();
-
-	await env.DB.prepare(
-		`CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-			DELETE FROM notes_fts WHERE id = old.id;
-			INSERT INTO notes_fts (id, title, content)
-			VALUES (new.id, new.title, new.content);
-		END`
-	).run();
-
-	await env.DB.prepare(
-		`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-			DELETE FROM notes_fts WHERE id = old.id;
-		END`
-	).run();
+	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+		INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
+	END`).run();
+	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+		DELETE FROM notes_fts WHERE id = old.id;
+		INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
+	END`).run();
+	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+		DELETE FROM notes_fts WHERE id = old.id;
+	END`).run();
 
 	await ensureAppMetaTable(env);
 
+	// Ensure tags tables
+	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS tags (
+		id TEXT PRIMARY KEY, vault_id TEXT NOT NULL DEFAULT 'default',
+		name TEXT NOT NULL, color TEXT DEFAULT '#07c160', created_at INTEGER NOT NULL
+	)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tags_vault ON tags(vault_id)`).run();
+	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_tags (
+		note_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (note_id, tag_id)
+	)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id)`).run();
+
+	// Ensure note_images table
+	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_images (
+		id TEXT PRIMARY KEY, note_id TEXT NOT NULL DEFAULT '', vault_id TEXT NOT NULL DEFAULT 'default',
+		filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL,
+		r2_key TEXT NOT NULL, created_at INTEGER NOT NULL
+	)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_images_vault ON note_images(vault_id)`).run();
+
+	// Ensure note_shares table
+	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_shares (
+		token TEXT PRIMARY KEY, note_id TEXT NOT NULL, vault_id TEXT NOT NULL,
+		created_at INTEGER NOT NULL, expires_at INTEGER DEFAULT NULL, is_active INTEGER NOT NULL DEFAULT 1
+	)`).run();
+	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_shares_note ON note_shares(note_id)`).run();
 }
 
 async function getMeta(env: AppEnv, key: string) {
-	const row = await env.DB.prepare(
-		`SELECT value FROM app_meta WHERE key = ? LIMIT 1`
-	)
-		.bind(key)
-		.first<{ value: string }>();
-
+	const row = await env.DB.prepare(`SELECT value FROM app_meta WHERE key = ? LIMIT 1`).bind(key).first<{ value: string }>();
 	return row?.value ?? null;
 }
 
 async function setMeta(env: AppEnv, key: string, value: string) {
-	await env.DB.prepare(
-		`INSERT INTO app_meta (key, value)
-		 VALUES (?, ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-	)
-		.bind(key, value)
-		.run();
+	await env.DB.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(key, value).run();
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -192,11 +234,12 @@ async function getOrCreateVaultSalt(env: AppEnv, vaultId: string) {
 	const key = vaultId === 'default' ? 'vault_salt' : `vault_salt:${vaultId}`;
 	const existing = await getMeta(env, key);
 	if (existing) return existing;
-
 	const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
 	await setMeta(env, key, salt);
 	return salt;
 }
+
+// ─── Static Assets ────────────────────────────────────────
 
 const appIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect x="8" y="6" width="48" height="52" rx="10" fill="#07c160"/>
@@ -212,813 +255,129 @@ const manifestJson = JSON.stringify({
 	display: 'standalone',
 	background_color: '#f5f5f5',
 	theme_color: '#07c160',
-	icons: [
-		{
-			src: '/app-icon.svg',
-			sizes: 'any',
-			type: 'image/svg+xml',
-			purpose: 'any maskable',
-		},
-	],
+	icons: [{ src: '/app-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
 });
 
-const serviceWorkerJs = `const CACHE_NAME = 'private-notes-shell-v1';
+const serviceWorkerJs = `const CACHE_NAME = 'private-notes-shell-v2';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/app-icon.svg'];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    ).then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  const url = new URL(request.url);
-
-  if (request.method !== 'GET' || url.pathname.startsWith('/api/')) {
-    return;
-  }
-
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/'))
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (!response || response.status !== 200) return response;
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      });
-    })
-  );
+self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(APP_SHELL)).then(() => self.skipWaiting())); });
+self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
+self.addEventListener('fetch', (e) => {
+  const r = e.request, u = new URL(r.url);
+  if (r.method !== 'GET' || u.pathname.startsWith('/api/') || u.pathname.startsWith('/s/')) return;
+  if (r.mode === 'navigate') { e.respondWith(fetch(r).catch(() => caches.match('/'))); return; }
+  e.respondWith(caches.match(r).then(c => c || fetch(r).then(res => { if (res && res.status === 200) { const cl = res.clone(); caches.open(CACHE_NAME).then(cache => cache.put(r, cl)); } return res; })));
 });`;
 
-const homeHtml = `<!doctype html>
+// ─── Share Page HTML ──────────────────────────────────────
+
+function sharePageHtml(title: string, content: string, createdAt: number, updatedAt: number) {
+	const safeTitle = title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const safeContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	return `<!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Private Notes</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #09111f;
-        --panel: rgba(15, 23, 42, 0.78);
-        --border: rgba(148, 163, 184, 0.18);
-        --text: #e5eefb;
-        --muted: #8aa0c2;
-        --accent: #7c93ff;
-        --accent-2: #a78bfa;
-        --danger: #ef4444;
-        --shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        color: var(--text);
-        font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(124, 147, 255, 0.24), transparent 28%),
-          radial-gradient(circle at top right, rgba(167, 139, 250, 0.18), transparent 24%),
-          linear-gradient(180deg, #0b1220 0%, #09111f 46%, #050b16 100%);
-      }
-      input, textarea, button { font: inherit; }
-      .hidden { display: none !important; }
-      .page { max-width: 1480px; margin: 0 auto; padding: 24px; }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
-      }
-      .login { max-width: 480px; margin: 10vh auto 0; padding: 28px; }
-      .eyebrow {
-        display: inline-flex;
-        padding: 6px 10px;
-        border-radius: 999px;
-        color: #c7d5f6;
-        background: rgba(124, 147, 255, 0.14);
-        border: 1px solid rgba(124, 147, 255, 0.2);
-        margin-bottom: 14px;
-      }
-      .login-title { margin: 0 0 8px; font-size: 34px; line-height: 1.1; }
-      .muted { color: var(--muted); font-size: 13px; }
-      .login-desc { margin: 0 0 18px; color: var(--muted); font-size: 15px; }
-      .toolbar {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        margin-bottom: 18px;
-        flex-wrap: wrap;
-      }
-      .toolbar-spacer { flex: 1; }
-      .layout {
-        display: grid;
-        grid-template-columns: 320px minmax(420px, 1fr) 320px;
-        gap: 16px;
-      }
-      .sidebar, .editor, .preview {
-        min-height: 76vh;
-        padding: 18px;
-      }
-      .panel-title { margin: 0; font-size: 22px; font-weight: 700; }
-      .panel-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin: 16px 0;
-      }
-      .stat {
-        padding: 14px;
-        border-radius: 18px;
-        border: 1px solid rgba(255,255,255,0.06);
-        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
-      }
-      .stat-label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-      .stat-value { font-size: 24px; font-weight: 700; }
-      input, textarea {
-        width: 100%;
-        border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(9, 17, 31, 0.76);
-        color: inherit;
-        padding: 12px 14px;
-        outline: none;
-      }
-      input:focus, textarea:focus {
-        border-color: rgba(124, 147, 255, 0.72);
-        box-shadow: 0 0 0 4px rgba(124, 147, 255, 0.16);
-      }
-      .title-input {
-        font-size: 28px;
-        font-weight: 700;
-        background: transparent;
-        border: 0;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        border-radius: 0;
-        padding: 2px 0 14px;
-        margin-bottom: 14px;
-      }
-      .title-input::placeholder { color: rgba(229, 238, 251, 0.38); }
-      textarea {
-        min-height: 52vh;
-        resize: vertical;
-      }
-      button {
-        border: 0;
-        border-radius: 14px;
-        padding: 10px 16px;
-        cursor: pointer;
-        color: white;
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        box-shadow: 0 12px 30px rgba(124, 147, 255, 0.22);
-      }
-      button.secondary { background: rgba(255,255,255,0.08); box-shadow: none; }
-      button.danger {
-        background: rgba(239, 68, 68, 0.16);
-        color: #fecaca;
-        box-shadow: none;
-      }
-      .search-row, .editor-actions, .editor-footer {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .row {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        margin-bottom: 12px;
-      }
-      .row.grow > * { flex: 1; }
-      .note-list {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin-top: 12px;
-      }
-      .note-item {
-        width: 100%;
-        text-align: left;
-        padding: 14px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid transparent;
-        border-radius: 18px;
-        color: inherit;
-      }
-      .note-item.active {
-        border-color: rgba(124, 147, 255, 0.6);
-        background: linear-gradient(180deg, rgba(124, 147, 255, 0.2), rgba(124, 147, 255, 0.08));
-      }
-      .note-meta {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 8px;
-        color: var(--muted);
-        font-size: 12px;
-      }
-      .note-title {
-        font-weight: 700;
-        margin-bottom: 6px;
-      }
-      .note-preview {
-        color: #cad7ee;
-        font-size: 13px;
-        line-height: 1.45;
-      }
-      .preview-box, .preview-meta-card {
-        padding: 16px;
-        border-radius: 20px;
-        border: 1px solid rgba(255,255,255,0.06);
-        background: rgba(255,255,255,0.04);
-      }
-      .preview-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin: 12px 0;
-      }
-      .preview-body {
-        min-height: 360px;
-        line-height: 1.7;
-        overflow: auto;
-      }
-      .preview-body h1, .preview-body h2, .preview-body h3 { margin: 0 0 10px; }
-      .preview-body p, .preview-body ul { margin: 0 0 12px; }
-      .preview-body ul { padding-left: 20px; }
-      .preview-body code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        background: rgba(255,255,255,0.08);
-        padding: 2px 6px;
-        border-radius: 8px;
-      }
-      .empty-state {
-        padding: 24px 18px;
-        border-radius: 18px;
-        border: 1px dashed rgba(148, 163, 184, 0.22);
-        color: var(--muted);
-        text-align: center;
-      }
-      #status { min-height: 20px; }
-      @media (max-width: 1280px) {
-        .layout { grid-template-columns: 320px 1fr; }
-        .preview { grid-column: span 2; min-height: auto; }
-      }
-      @media (max-width: 900px) {
-        .layout { grid-template-columns: 1fr; }
-        .preview { grid-column: span 1; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <section id="loginView" class="card login hidden">
-        <div class="eyebrow">Private Notes · D1 only</div>
-        <h1 class="login-title">像真正的笔记软件，而不是测试页。</h1>
-        <p class="login-desc">左边像时间流，中间专心编辑，右边即时预览。适合每天记想法、清单、摘录和日志。</p>
-        <div class="row grow">
-          <input id="passwordInput" type="password" placeholder="输入登录密码" />
-        </div>
-        <div class="row">
-          <button id="loginBtn">登录</button>
-        </div>
-        <div id="loginStatus" class="muted"></div>
-      </section>
-
-      <section id="appView" class="hidden">
-        <div class="toolbar">
-          <div>
-            <h1 class="panel-title">Private Notes</h1>
-            <div class="panel-subtitle">更像博客首页 + 笔记软件编辑器的混合风格</div>
-          </div>
-          <div class="toolbar-spacer"></div>
-          <button id="newBtn">新建笔记</button>
-          <button id="logoutBtn" class="secondary">退出登录</button>
-        </div>
-
-        <div class="layout">
-          <aside class="card sidebar">
-            <div class="search-row">
-              <input id="searchInput" placeholder="搜索标题或正文…" />
-              <button id="searchBtn" class="secondary">搜索</button>
-            </div>
-            <div class="stats">
-              <div class="stat">
-                <div class="stat-label">当前结果</div>
-                <div id="statCount" class="stat-value">0</div>
-              </div>
-              <div class="stat">
-                <div class="stat-label">状态</div>
-                <div id="statMode" class="stat-value" style="font-size:18px">待编辑</div>
-              </div>
-            </div>
-            <div class="muted" id="listMeta">加载中…</div>
-            <div id="noteList" class="note-list"></div>
-          </aside>
-
-          <main class="card editor">
-            <div class="editor-actions" style="justify-content:space-between; margin-bottom:12px;">
-              <div>
-                <h2 class="panel-title" style="font-size:24px;">编辑器</h2>
-                <div class="panel-subtitle">支持实时预览，适合当私人知识卡片和日记本。</div>
-              </div>
-              <div class="editor-actions">
-                <button id="saveBtn">保存</button>
-                <button id="deleteBtn" class="danger">删除</button>
-              </div>
-            </div>
-            <div class="row grow">
-              <input id="titleInput" class="title-input" placeholder="给这条笔记起个标题…" />
-            </div>
-            <textarea id="contentInput" placeholder="# 今天记点什么&#10;&#10;- 待办&#10;- 想法&#10;- 摘录"></textarea>
-            <div class="editor-footer">
-              <span id="status" class="muted"></span>
-              <span class="muted">支持基础 Markdown 预览，快捷键 Ctrl/Cmd + S 保存</span>
-            </div>
-          </main>
-
-          <aside class="card preview">
-            <h2 class="panel-title" style="font-size:20px;">阅读预览</h2>
-            <div class="panel-subtitle">右侧更像博客阅读视图，方便快速翻看记录。</div>
-            <div class="preview-box" style="margin-top:16px;">
-              <div id="previewTitle" class="note-title" style="font-size:20px; margin-bottom:4px;">未选择笔记</div>
-              <div id="previewSubtitle" class="muted">创建或选择一条笔记后，这里会显示摘要和状态。</div>
-            </div>
-            <div class="preview-grid">
-              <div class="preview-meta-card">
-                <div class="stat-label">最后更新</div>
-                <div id="previewUpdated">-</div>
-              </div>
-              <div class="preview-meta-card">
-                <div class="stat-label">字数</div>
-                <div id="previewWords">0</div>
-              </div>
-            </div>
-            <div id="previewBody" class="preview-box preview-body">
-              <div class="empty-state">在左侧选择一条笔记，或者直接新建一条开始写。</div>
-            </div>
-          </aside>
-        </div>
-      </section>
-    </div>
-
-    <script>
-      const state = {
-        currentId: null,
-        notes: [],
-        autoSaveTimer: null,
-        loadingNote: false
-      };
-
-      const els = {
-        loginView: document.getElementById('loginView'),
-        appView: document.getElementById('appView'),
-        passwordInput: document.getElementById('passwordInput'),
-        loginBtn: document.getElementById('loginBtn'),
-        loginStatus: document.getElementById('loginStatus'),
-        searchInput: document.getElementById('searchInput'),
-        searchBtn: document.getElementById('searchBtn'),
-        logoutBtn: document.getElementById('logoutBtn'),
-        noteList: document.getElementById('noteList'),
-        listMeta: document.getElementById('listMeta'),
-        statCount: document.getElementById('statCount'),
-        statMode: document.getElementById('statMode'),
-        newBtn: document.getElementById('newBtn'),
-        titleInput: document.getElementById('titleInput'),
-        contentInput: document.getElementById('contentInput'),
-        saveBtn: document.getElementById('saveBtn'),
-        deleteBtn: document.getElementById('deleteBtn'),
-        status: document.getElementById('status'),
-        previewTitle: document.getElementById('previewTitle'),
-        previewSubtitle: document.getElementById('previewSubtitle'),
-        previewUpdated: document.getElementById('previewUpdated'),
-        previewWords: document.getElementById('previewWords'),
-        previewBody: document.getElementById('previewBody')
-      };
-
-      function setStatus(text) {
-        els.status.textContent = text || '';
-      }
-
-      function showLogin() {
-        els.loginView.classList.remove('hidden');
-        els.appView.classList.add('hidden');
-      }
-
-      function showApp() {
-        els.loginView.classList.add('hidden');
-        els.appView.classList.remove('hidden');
-      }
-
-      function formatDate(ts) {
-        if (!ts) return '-';
-        return new Intl.DateTimeFormat('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
-        }).format(new Date(ts));
-      }
-
-      function wordCount(text) {
-        return (text || '').replace(/\\s+/g, '').length;
-      }
-
-      async function api(url, options) {
-        const res = await fetch(url, options);
-        const data = await res.json().catch(() => ({}));
-        if (res.status === 401) {
-          showLogin();
-          throw new Error('请先登录');
-        }
-        if (!res.ok) {
-          throw new Error(data.error || '请求失败');
-        }
-        return data;
-      }
-
-      function previewOf(note) {
-        return (note.content || '').replace(/\\s+/g, ' ').slice(0, 88) || '（空内容）';
-      }
-
-      function escapeHtml(text) {
-        return (text || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/\"/g, '&quot;');
-      }
-
-      function inlineMd(text) {
-        return text
-          .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
-          .replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
-      }
-
-      function renderMarkdown(text) {
-        const safe = escapeHtml(text || '');
-        const lines = safe.split('\\n');
-        const html = [];
-        let inList = false;
-
-        function closeList() {
-          if (inList) {
-            html.push('</ul>');
-            inList = false;
-          }
-        }
-
-        for (const rawLine of lines) {
-          const line = rawLine.trimEnd();
-          if (!line.trim()) {
-            closeList();
-            continue;
-          }
-
-          if (line.startsWith('### ')) {
-            closeList();
-            html.push('<h3>' + inlineMd(line.slice(4)) + '</h3>');
-            continue;
-          }
-
-          if (line.startsWith('## ')) {
-            closeList();
-            html.push('<h2>' + inlineMd(line.slice(3)) + '</h2>');
-            continue;
-          }
-
-          if (line.startsWith('# ')) {
-            closeList();
-            html.push('<h1>' + inlineMd(line.slice(2)) + '</h1>');
-            continue;
-          }
-
-          if (line.startsWith('- ') || line.startsWith('* ')) {
-            if (!inList) {
-              html.push('<ul>');
-              inList = true;
-            }
-            html.push('<li>' + inlineMd(line.slice(2)) + '</li>');
-            continue;
-          }
-
-          closeList();
-          html.push('<p>' + inlineMd(line) + '</p>');
-        }
-
-        closeList();
-        return html.join('') || '<div class=\"empty-state\">这条笔记还没有内容。</div>';
-      }
-
-      function syncPreview() {
-        const title = els.titleInput.value.trim() || '未命名笔记';
-        const content = els.contentInput.value;
-        const current = state.notes.find((item) => item.id === state.currentId);
-
-        els.previewTitle.textContent = title;
-        els.previewSubtitle.textContent = previewOf({ content });
-        els.previewUpdated.textContent = current ? formatDate(current.updated_at) : '尚未保存';
-        els.previewWords.textContent = String(wordCount(content));
-        els.previewBody.innerHTML = renderMarkdown(content);
-        els.statMode.textContent = state.currentId ? '编辑中' : '草稿中';
-      }
-
-      function renderList() {
-        els.noteList.innerHTML = '';
-        els.statCount.textContent = String(state.notes.length);
-        els.listMeta.textContent = state.notes.length
-          ? '共找到 ' + state.notes.length + ' 条笔记'
-          : '还没有笔记，先写第一条吧。';
-
-        if (!state.notes.length) {
-          els.noteList.innerHTML = '<div class=\"empty-state\">没有匹配结果。可以新建一条，或者换个关键词再搜。</div>';
-          return;
-        }
-
-        state.notes.forEach((note) => {
-          const btn = document.createElement('button');
-          btn.className = 'note-item' + (note.id === state.currentId ? ' active' : '');
-          btn.type = 'button';
-
-          const meta = document.createElement('div');
-          meta.className = 'note-meta';
-          meta.innerHTML = '<span>' + formatDate(note.updated_at) + '</span><span>' + wordCount(note.content) + ' 字</span>';
-
-          const title = document.createElement('div');
-          title.className = 'note-title';
-          title.textContent = note.title || '无标题';
-
-          const preview = document.createElement('div');
-          preview.className = 'note-preview';
-          preview.textContent = previewOf(note);
-
-          btn.appendChild(meta);
-          btn.appendChild(title);
-          btn.appendChild(preview);
-          btn.onclick = () => openNote(note.id);
-          els.noteList.appendChild(btn);
-        });
-      }
-
-      function fillEditor(note) {
-        state.currentId = note ? note.id : null;
-        els.titleInput.value = note ? note.title : '';
-        els.contentInput.value = note ? note.content : '';
-        renderList();
-        syncPreview();
-      }
-
-      async function refreshNotes(preserveEditor) {
-        const q = els.searchInput.value.trim();
-        const query = q ? ('?q=' + encodeURIComponent(q)) : '';
-        const data = await api('/api/notes' + query);
-        state.notes = data.notes || [];
-        renderList();
-
-        if (preserveEditor) {
-          syncPreview();
-          return;
-        }
-
-        if (!state.currentId && state.notes.length) {
-          fillEditor(state.notes[0]);
-        } else if (state.currentId) {
-          const current = state.notes.find((item) => item.id === state.currentId);
-          if (current) {
-            fillEditor(current);
-          } else {
-            fillEditor(null);
-          }
-        } else {
-          syncPreview();
-        }
-      }
-
-      async function openNote(id) {
-        state.loadingNote = true;
-        const data = await api('/api/notes/' + encodeURIComponent(id));
-        fillEditor(data.note);
-        state.loadingNote = false;
-        setStatus('已加载');
-      }
-
-      async function saveCurrent(silent) {
-        const title = els.titleInput.value.trim();
-        const content = els.contentInput.value.trim();
-
-        if (!title && !content) {
-          if (!silent) setStatus('标题和内容至少写一个');
-          return null;
-        }
-
-        if (!silent) setStatus('保存中…');
-
-        let data;
-        if (state.currentId) {
-          data = await api('/api/notes/' + encodeURIComponent(state.currentId), {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ title: title || '无标题', content })
-          });
-        } else {
-          data = await api('/api/notes', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ title: title || '无标题', content })
-          });
-        }
-
-        fillEditor(data.note);
-        await refreshNotes(true);
-        if (!silent) setStatus('已保存');
-        return data.note;
-      }
-
-      function scheduleAutoSave() {
-        if (state.loadingNote) return;
-        syncPreview();
-        setStatus('草稿已变更…');
-        clearTimeout(state.autoSaveTimer);
-        state.autoSaveTimer = setTimeout(() => {
-          saveCurrent(true)
-            .then((note) => {
-              if (note) setStatus('已自动保存');
-            })
-            .catch((error) => setStatus(error.message || '自动保存失败'));
-        }, 1200);
-      }
-
-      async function deleteCurrent() {
-        if (!state.currentId) {
-          setStatus('当前没有可删除的笔记');
-          return;
-        }
-        if (!confirm('确定删除这条笔记吗？')) return;
-
-        await api('/api/notes/' + encodeURIComponent(state.currentId), {
-          method: 'DELETE'
-        });
-
-        state.currentId = null;
-        fillEditor(null);
-        await refreshNotes();
-        setStatus('已删除');
-      }
-
-      async function checkSession() {
-        const data = await api('/api/session');
-        if (data.authenticated) {
-          showApp();
-          await refreshNotes();
-        } else {
-          showLogin();
-        }
-      }
-
-      els.loginBtn.onclick = async () => {
-        try {
-          els.loginStatus.textContent = '登录中…';
-          await api('/api/login', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ password: els.passwordInput.value })
-          });
-          els.passwordInput.value = '';
-          els.loginStatus.textContent = '';
-          showApp();
-          await refreshNotes();
-        } catch (error) {
-          els.loginStatus.textContent = error.message || '登录失败';
-        }
-      };
-
-      els.passwordInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') els.loginBtn.click();
-      });
-
-      els.searchBtn.onclick = () => {
-        refreshNotes()
-          .then(() => setStatus('已刷新搜索结果'))
-          .catch((error) => setStatus(error.message || '搜索失败'));
-      };
-
-      els.searchInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          refreshNotes().catch((error) => setStatus(error.message || '搜索失败'));
-        }
-      });
-
-      els.logoutBtn.onclick = async () => {
-        await api('/api/logout', { method: 'POST' });
-        state.currentId = null;
-        state.notes = [];
-        fillEditor(null);
-        showLogin();
-        setStatus('');
-      };
-
-      els.newBtn.onclick = () => {
-        clearTimeout(state.autoSaveTimer);
-        fillEditor(null);
-        els.titleInput.focus();
-        setStatus('已切换到新建模式');
-      };
-
-      els.saveBtn.onclick = () => {
-        saveCurrent(false).catch((error) => setStatus(error.message || '保存失败'));
-      };
-
-      els.deleteBtn.onclick = () => {
-        deleteCurrent().catch((error) => setStatus(error.message || '删除失败'));
-      };
-
-      els.titleInput.addEventListener('input', scheduleAutoSave);
-      els.contentInput.addEventListener('input', scheduleAutoSave);
-
-      document.addEventListener('keydown', (event) => {
-        const isSave = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
-        if (isSave) {
-          event.preventDefault();
-          saveCurrent(false).catch((error) => setStatus(error.message || '保存失败'));
-        }
-      });
-
-      fillEditor(null);
-      checkSession().catch(() => showLogin());
-    </script>
-  </body>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${safeTitle} - Private Notes</title>
+<meta name="theme-color" content="#07c160"/>
+<style>
+:root { color-scheme: light; --bg:#f5f5f5; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280; --accent:#07c160; --shadow:0 8px 24px rgba(15,23,42,.06); }
+*{box-sizing:border-box}
+body{margin:0;color:var(--text);font:15px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased}
+.page{max-width:720px;margin:0 auto;padding:24px 16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:28px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:20px;color:var(--muted);font-size:13px}
+.brand-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#06ad56);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+h1{margin:0 0 8px;font-size:26px;line-height:1.2}
+.meta{display:flex;gap:16px;color:var(--muted);font-size:13px;margin-bottom:20px;flex-wrap:wrap}
+.content{line-height:1.8;white-space:pre-wrap;word-break:break-word}
+.content h1,.content h2,.content h3{margin:16px 0 8px}
+.content code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
+.content img{max-width:100%;border-radius:8px;margin:8px 0}
+.footer{text-align:center;color:var(--muted);font-size:12px;margin-top:24px}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="brand"><div class="brand-icon">📝</div>Private Notes</div>
+<div class="card">
+<h1>${safeTitle}</h1>
+<div class="meta">
+<span>创建: ${new Date(createdAt).toLocaleDateString('zh-CN')}</span>
+<span>更新: ${new Date(updatedAt).toLocaleDateString('zh-CN')}</span>
+</div>
+<div class="content">${safeContent}</div>
+</div>
+<div class="footer">Shared via Private Notes · E2EE</div>
+</div>
+</body>
 </html>`;
+}
+
+// ─── Main Handler ─────────────────────────────────────────
 
 export default {
 	async fetch(request: Request, env: AppEnv): Promise<Response> {
 		const url = new URL(request.url);
 
+		// Static assets
 		if (url.pathname === '/manifest.webmanifest') {
-			return new Response(manifestJson, {
-				headers: {
-					'content-type': 'application/manifest+json; charset=utf-8',
-					'cache-control': 'public, max-age=3600',
-				},
-			});
+			return new Response(manifestJson, { headers: { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
 		}
-
 		if (url.pathname === '/sw.js') {
-			return new Response(serviceWorkerJs, {
-				headers: {
-					'content-type': 'application/javascript; charset=utf-8',
-					'cache-control': 'no-store',
-				},
-			});
+			return new Response(serviceWorkerJs, { headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' } });
 		}
-
 		if (url.pathname === '/app-icon.svg') {
-			return new Response(appIconSvg, {
-				headers: {
-					'content-type': 'image/svg+xml; charset=utf-8',
-					'cache-control': 'public, max-age=86400',
-				},
-			});
+			return new Response(appIconSvg, { headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' } });
 		}
-
 		if (url.pathname === '/') {
 			return html(blogHomeHtml);
 		}
 
+		// ─── Share page (public, no auth) ──────────────
+		if (url.pathname.startsWith('/s/') && request.method === 'GET') {
+			await ensureNotesSchema(env);
+			const token = url.pathname.slice(3);
+			if (!token) return html(sharePageHtml('404', '分享链接不存在', 0, 0));
+
+			const share = await env.DB.prepare(
+				`SELECT * FROM note_shares WHERE token = ? AND is_active = 1 LIMIT 1`
+			).bind(token).first<NoteShare>();
+
+			if (!share) return html(sharePageHtml('链接无效', '此分享链接不存在或已被撤销。', 0, 0));
+			if (share.expires_at && share.expires_at < Date.now()) {
+				return html(sharePageHtml('链接已过期', '此分享链接已过期。', 0, 0));
+			}
+
+			const note = await env.DB.prepare(
+				`SELECT id, title, content, created_at, updated_at FROM notes WHERE id = ? AND vault_id = ? LIMIT 1`
+			).bind(share.note_id, share.vault_id).first<Note>();
+
+			if (!note) return html(sharePageHtml('笔记不存在', '此笔记可能已被删除。', 0, 0));
+			return html(sharePageHtml(note.title, note.content, note.created_at, note.updated_at));
+		}
+
+		// ─── Public image serving ──────────────────────
+		if (url.pathname.startsWith('/_/images/') && request.method === 'GET') {
+			if (!env.IMAGES) return new Response('Image storage not configured', { status: 503 });
+			const key = decodeURIComponent(url.pathname.slice(11));
+			const object = await env.IMAGES.get(key);
+			if (!object) return new Response('Not found', { status: 404 });
+			const headers = new Headers();
+			object.writeHttpMetadata(headers);
+			headers.set('etag', object.httpEtag);
+			headers.set('cache-control', 'public, max-age=31536000');
+			return new Response(object.body, { headers });
+		}
+
+		// ─── Auth routes ───────────────────────────────
 		if (url.pathname === '/api/health' && request.method === 'GET') {
 			await ensureNotesSchema(env);
 			const session = await getSession(request, env);
 			if (isAuthConfigured(env) && !session.authenticated) return unauthorized();
-			const result = await env.DB.prepare('SELECT COUNT(*) AS note_count FROM notes WHERE vault_id = ?')
-				.bind(session.vaultId)
-				.first<{
-				note_count: number;
-			}>();
-			return json({
-				ok: true,
-				noteCount: result?.note_count ?? 0,
-				authEnabled: isAuthConfigured(env),
-				vaultCount: getConfiguredVaultCount(env),
-				now: Date.now(),
-			});
+			const result = await env.DB.prepare('SELECT COUNT(*) AS note_count FROM notes WHERE vault_id = ? AND deleted_at IS NULL').bind(session.vaultId).first<{ note_count: number }>();
+			return json({ ok: true, noteCount: result?.note_count ?? 0, authEnabled: isAuthConfigured(env), vaultCount: getConfiguredVaultCount(env), now: Date.now() });
 		}
 
 		if (url.pathname === '/api/session' && request.method === 'GET') {
@@ -1027,147 +386,249 @@ export default {
 		}
 
 		if (url.pathname === '/api/login' && request.method === 'POST') {
-			if (!isAuthConfigured(env)) {
-				return json({ ok: false, error: 'server auth not configured' }, 500);
-			}
-
+			if (!isAuthConfigured(env)) return json({ ok: false, error: 'server auth not configured' }, 500);
 			const rateLimit = await getLoginRateLimit(request, env);
-			if (rateLimit.limited) {
-				return tooManyLoginAttempts(rateLimit.retryAfterSeconds);
-			}
-
+			if (rateLimit.limited) return tooManyLoginAttempts(rateLimit.retryAfterSeconds);
 			const body = (await request.json().catch(() => null)) as { password?: string } | null;
 			const vaultId = body?.password ? await getVaultIdForPassword(env, body.password) : null;
 			if (!vaultId) {
 				const failure = await recordFailedLogin(env, rateLimit.key);
-				if (failure.locked) {
-					return tooManyLoginAttempts(failure.retryAfterSeconds);
-				}
+				if (failure.locked) return tooManyLoginAttempts(failure.retryAfterSeconds);
 				return unauthorized();
 			}
-
 			await clearFailedLogins(env, rateLimit.key);
 			await cleanupOldLoginRateLimits(env);
-
-			return json(
-				{ ok: true },
-				200,
-				{
-					'set-cookie': `session=${await createSessionToken(env, vaultId)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}`,
-				}
-			);
+			return json({ ok: true }, 200, { 'set-cookie': `session=${await createSessionToken(env, vaultId)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}` });
 		}
 
 		if (url.pathname === '/api/logout' && request.method === 'POST') {
-			return json(
-				{ ok: true },
-				200,
-				{
-					'set-cookie': 'session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
-				}
-			);
+			return json({ ok: true }, 200, { 'set-cookie': 'session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0' });
 		}
 
+		// Auth guard for all /api/ routes below
 		if (url.pathname.startsWith('/api/') && !(await isAuthed(request, env))) {
 			return unauthorized();
 		}
 
+		// ─── Crypto config ─────────────────────────────
 		if (url.pathname === '/api/crypto-config' && request.method === 'GET') {
 			const vaultId = await getAuthedVaultId(request, env);
-			return json({
-				ok: true,
-				vaultSalt: await getOrCreateVaultSalt(env, vaultId),
-				cipher: 'aes-gcm-256',
-				kdf: 'pbkdf2-sha256',
-				iterations: 250000,
-				version: 1,
-			});
+			return json({ ok: true, vaultSalt: await getOrCreateVaultSalt(env, vaultId), cipher: 'aes-gcm-256', kdf: 'pbkdf2-sha256', iterations: 250000, version: 1 });
 		}
 
+		// ─── Notes CRUD ────────────────────────────────
 		if (url.pathname === '/api/notes' && request.method === 'GET') {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
-			return json({
-				ok: true,
-				notes: await listNotes(env, vaultId),
-			});
+			const tagFilter = url.searchParams.get('tag');
+			let notes = await listNotes(env, vaultId);
+
+			if (tagFilter) {
+				const taggedNoteIds = await env.DB.prepare(
+					`SELECT note_id FROM note_tags WHERE tag_id = ?`
+				).bind(tagFilter).all<{ note_id: string }>();
+				const idSet = new Set((taggedNoteIds.results ?? []).map((r) => r.note_id));
+				notes = notes.filter((n) => idSet.has(n.id));
+			}
+
+			return json({ ok: true, notes });
 		}
 
 		if (url.pathname === '/api/notes' && request.method === 'POST') {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
-			const body = (await request.json().catch(() => null)) as
-				| { title?: string; content?: string }
-				| null;
-
+			const body = (await request.json().catch(() => null)) as { title?: string; content?: string } | null;
 			const title = body?.title?.trim() || '无标题';
 			const content = body?.content?.trim() || '';
-
-			if (!title && !content) {
-				return json({ ok: false, error: 'title/content required' }, 400);
-			}
-
+			if (!title && !content) return json({ ok: false, error: 'title/content required' }, 400);
 			const now = Date.now();
-			const note: Note = {
-				id: crypto.randomUUID(),
-				vault_id: vaultId,
-				title,
-				content,
-				created_at: now,
-				updated_at: now,
-			};
-
-			await env.DB.prepare(
-				`INSERT INTO notes (id, vault_id, title, content, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?)`
-			)
-				.bind(note.id, vaultId, note.title, note.content, note.created_at, note.updated_at)
-				.run();
-
+			const note: Note = { id: crypto.randomUUID(), vault_id: vaultId, title, content, created_at: now, updated_at: now };
+			await env.DB.prepare(`INSERT INTO notes (id, vault_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).bind(note.id, vaultId, note.title, note.content, note.created_at, note.updated_at).run();
 			return json({ ok: true, note }, 201);
 		}
 
+		// ─── Notes by ID ───────────────────────────────
 		if (url.pathname.startsWith('/api/notes/')) {
 			await ensureNotesSchema(env);
 			const vaultId = await getAuthedVaultId(request, env);
-			const id = decodeURIComponent(url.pathname.slice('/api/notes/'.length));
-			if (!id) return json({ ok: false, error: 'missing id' }, 400);
+			const rest = decodeURIComponent(url.pathname.slice('/api/notes/'.length));
 
-			if (request.method === 'GET') {
-				const note = await getNote(env, id, vaultId);
+			// Check for sub-routes: trash, export, :id/pin, :id/tags, :id/share, :id/restore, :id/permanent
+			if (rest === 'trash' && request.method === 'GET') {
+				return json({ ok: true, notes: await listTrashNotes(env, vaultId) });
+			}
+
+			if (rest === 'export' && request.method === 'GET') {
+				const format = url.searchParams.get('format') || 'json';
+				const notes = await listNotes(env, vaultId);
+				if (format === 'markdown') {
+					let md = '# 我的笔记\n\n';
+					for (const n of notes) {
+						md += `## ${n.title}\n\n${n.content}\n\n---\n\n`;
+					}
+					return new Response(md, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'content-disposition': 'attachment; filename="notes.md"' } });
+				}
+				return new Response(JSON.stringify(notes, null, 2), { headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': 'attachment; filename="notes.json"' } });
+			}
+
+			// Sub-routes with :id prefix
+			const idMatch = rest.match(/^([^/]+)(?:\/(.+))?$/);
+			if (!idMatch) return json({ ok: false, error: 'invalid path' }, 400);
+			const noteId = idMatch[1];
+			const subRoute = idMatch[2] || '';
+
+			// GET /api/notes/:id
+			if (!subRoute && request.method === 'GET') {
+				const note = await getNote(env, noteId, vaultId);
 				if (!note) return json({ ok: false, error: 'not_found' }, 404);
 				return json({ ok: true, note });
 			}
 
-			if (request.method === 'PUT') {
-				const body = (await request.json().catch(() => null)) as
-					| { title?: string; content?: string }
-					| null;
-
+			// PUT /api/notes/:id
+			if (!subRoute && request.method === 'PUT') {
+				const body = (await request.json().catch(() => null)) as { title?: string; content?: string } | null;
 				const title = body?.title?.trim() || '无标题';
 				const content = body?.content?.trim() || '';
-
-				const existing = await getNote(env, id, vaultId);
+				const existing = await getNote(env, noteId, vaultId);
 				if (!existing) return json({ ok: false, error: 'not_found' }, 404);
-
-				await env.DB.prepare(
-					`UPDATE notes
-					 SET title = ?, content = ?, updated_at = ?
-					 WHERE id = ? AND vault_id = ?`
-				)
-					.bind(title, content, Date.now(), id, vaultId)
-					.run();
-
-				const note = await getNote(env, id, vaultId);
+				await env.DB.prepare(`UPDATE notes SET title = ?, content = ?, updated_at = ? WHERE id = ? AND vault_id = ?`).bind(title, content, Date.now(), noteId, vaultId).run();
+				const note = await getNote(env, noteId, vaultId);
 				return json({ ok: true, note });
 			}
 
-			if (request.method === 'DELETE') {
-				await env.DB.prepare('DELETE FROM notes WHERE id = ? AND vault_id = ?').bind(id, vaultId).run();
+			// DELETE /api/notes/:id → soft delete (trash)
+			if (!subRoute && request.method === 'DELETE') {
+				await env.DB.prepare(`UPDATE notes SET deleted_at = ?, updated_at = ? WHERE id = ? AND vault_id = ?`).bind(Date.now(), Date.now(), noteId, vaultId).run();
 				return json({ ok: true });
 			}
+
+			// PUT /api/notes/:id/pin → toggle pin
+			if (subRoute === 'pin' && request.method === 'PUT') {
+				const note = await getNote(env, noteId, vaultId);
+				if (!note) return json({ ok: false, error: 'not_found' }, 404);
+				const newPinned = note.is_pinned ? 0 : 1;
+				await env.DB.prepare(`UPDATE notes SET is_pinned = ?, updated_at = ? WHERE id = ? AND vault_id = ?`).bind(newPinned, Date.now(), noteId, vaultId).run();
+				return json({ ok: true, is_pinned: newPinned });
+			}
+
+			// PUT /api/notes/:id/tags → set tags
+			if (subRoute === 'tags' && request.method === 'PUT') {
+				const body = (await request.json().catch(() => null)) as { tagIds?: string[] } | null;
+				const tagIds = body?.tagIds || [];
+				await env.DB.prepare(`DELETE FROM note_tags WHERE note_id = ?`).bind(noteId).run();
+				for (const tagId of tagIds) {
+					await env.DB.prepare(`INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)`).bind(noteId, tagId).run();
+				}
+				return json({ ok: true });
+			}
+
+			// POST /api/notes/:id/restore → restore from trash
+			if (subRoute === 'restore' && request.method === 'POST') {
+				await env.DB.prepare(`UPDATE notes SET deleted_at = NULL, updated_at = ? WHERE id = ? AND vault_id = ?`).bind(Date.now(), noteId, vaultId).run();
+				return json({ ok: true });
+			}
+
+			// DELETE /api/notes/:id/permanent → permanent delete
+			if (subRoute === 'permanent' && request.method === 'DELETE') {
+				await env.DB.prepare(`DELETE FROM notes WHERE id = ? AND vault_id = ?`).bind(noteId, vaultId).run();
+				await env.DB.prepare(`DELETE FROM note_tags WHERE note_id = ?`).bind(noteId).run();
+				await env.DB.prepare(`DELETE FROM note_shares WHERE note_id = ? AND vault_id = ?`).bind(noteId, vaultId).run();
+				return json({ ok: true });
+			}
+
+			// POST /api/notes/:id/share → create share link
+			if (subRoute === 'share' && request.method === 'POST') {
+				const note = await getNote(env, noteId, vaultId);
+				if (!note) return json({ ok: false, error: 'not_found' }, 404);
+				const body = (await request.json().catch(() => null)) as { expiresAt?: number } | null;
+				const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+				const now = Date.now();
+				const expiresAt = body?.expiresAt || null;
+				await env.DB.prepare(`INSERT INTO note_shares (token, note_id, vault_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`).bind(token, noteId, vaultId, now, expiresAt).run();
+				return json({ ok: true, token, url: `${url.origin}/s/${token}`, expiresAt });
+			}
+
+			// GET /api/notes/:id/shares → list shares for a note
+			if (subRoute === 'shares' && request.method === 'GET') {
+				const shares = await env.DB.prepare(`SELECT * FROM note_shares WHERE note_id = ? AND vault_id = ? AND is_active = 1 ORDER BY created_at DESC`).bind(noteId, vaultId).all<NoteShare>();
+				return json({ ok: true, shares: shares.results ?? [] });
+			}
+
+			return json({ ok: false, error: 'not_found' }, 404);
+		}
+
+		// ─── Tags CRUD ─────────────────────────────────
+		if (url.pathname === '/api/tags' && request.method === 'GET') {
+			await ensureNotesSchema(env);
+			const vaultId = await getAuthedVaultId(request, env);
+			const tags = await env.DB.prepare(`SELECT * FROM tags WHERE vault_id = ? ORDER BY name`).bind(vaultId).all<Tag>();
+			return json({ ok: true, tags: tags.results ?? [] });
+		}
+
+		if (url.pathname === '/api/tags' && request.method === 'POST') {
+			await ensureNotesSchema(env);
+			const vaultId = await getAuthedVaultId(request, env);
+			const body = (await request.json().catch(() => null)) as { name?: string; color?: string } | null;
+			const name = body?.name?.trim();
+			if (!name) return json({ ok: false, error: 'name required' }, 400);
+			const color = body?.color || '#07c160';
+			const id = crypto.randomUUID();
+			await env.DB.prepare(`INSERT INTO tags (id, vault_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)`).bind(id, vaultId, name, color, Date.now()).run();
+			return json({ ok: true, tag: { id, vault_id: vaultId, name, color, created_at: Date.now() } }, 201);
+		}
+
+		if (url.pathname.startsWith('/api/tags/')) {
+			await ensureNotesSchema(env);
+			const vaultId = await getAuthedVaultId(request, env);
+			const tagId = decodeURIComponent(url.pathname.slice('/api/tags/'.length));
+			if (request.method === 'DELETE') {
+				await env.DB.prepare(`DELETE FROM tags WHERE id = ? AND vault_id = ?`).bind(tagId, vaultId).run();
+				await env.DB.prepare(`DELETE FROM note_tags WHERE tag_id = ?`).bind(tagId).run();
+				return json({ ok: true });
+			}
+			return json({ ok: false, error: 'not_found' }, 404);
+		}
+
+		// ─── Image Upload ──────────────────────────────
+		if (url.pathname === '/api/images/upload' && request.method === 'POST') {
+			await ensureNotesSchema(env);
+			if (!env.IMAGES) return json({ ok: false, error: 'Image storage not configured' }, 503);
+			const vaultId = await getAuthedVaultId(request, env);
+			const contentType = request.headers.get('content-type') || '';
+			if (!contentType.startsWith('image/')) return json({ ok: false, error: 'Only images allowed' }, 400);
+
+			const body = await request.arrayBuffer();
+			if (body.byteLength > 5 * 1024 * 1024) return json({ ok: false, error: 'Max 5MB' }, 400);
+
+			const ext = contentType.split('/')[1]?.split(';')[0] || 'png';
+			const id = crypto.randomUUID();
+			const r2Key = `${vaultId}/${id}.${ext}`;
+
+			await env.IMAGES.put(r2Key, body, { httpMetadata: { contentType } });
+
+			const noteId = url.searchParams.get('noteId') || '';
+			await env.DB.prepare(`INSERT INTO note_images (id, note_id, vault_id, filename, content_type, size, r2_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, noteId, vaultId, `${id}.${ext}`, contentType, body.byteLength, r2Key, Date.now()).run();
+
+			return json({ ok: true, url: `/_/images/${r2Key}`, id, r2Key });
+		}
+
+		// ─── Revoke share ──────────────────────────────
+		if (url.pathname.startsWith('/api/shares/') && request.method === 'DELETE') {
+			await ensureNotesSchema(env);
+			const vaultId = await getAuthedVaultId(request, env);
+			const token = decodeURIComponent(url.pathname.slice('/api/shares/'.length));
+			await env.DB.prepare(`UPDATE note_shares SET is_active = 0 WHERE token = ? AND vault_id = ?`).bind(token, vaultId).run();
+			return json({ ok: true });
 		}
 
 		return json({ ok: false, error: 'not_found' }, 404);
+	},
+
+	async scheduled(event: ScheduledEvent, env: AppEnv, ctx: ExecutionContext) {
+		// Cleanup expired shares and old trash (>30 days)
+		await ensureNotesSchema(env);
+		const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+		await env.DB.prepare(`DELETE FROM note_shares WHERE expires_at IS NOT NULL AND expires_at < ?`).bind(Date.now()).run();
+		await env.DB.prepare(`DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?`).bind(thirtyDaysAgo).run();
 	},
 } satisfies ExportedHandler<Env>;
