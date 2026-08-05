@@ -150,7 +150,8 @@ export const blogHomeHtml = `<!doctype html>
       .login-content {
         position: relative; z-index: 2;
         flex: 1; display: flex; flex-direction: column; justify-content: center;
-        padding: 0 40px; max-width: 640px;
+        padding: 0 40px; max-width: 640px; width: 100%;
+        align-self: center;
       }
       .login-badge {
         display: inline-flex; align-items: center; gap: 8px;
@@ -406,6 +407,11 @@ export const blogHomeHtml = `<!doctype html>
         .note-actions { gap: 4px; }
         .note-actions .btn { padding: 6px 10px; font-size: 11px; }
         .fab-new { width: 48px; height: 48px; font-size: 22px; }
+        /* Login mobile */
+        .login-content { padding: 0 20px; }
+        .login-title { font-size: 36px !important; }
+        .login-subtitle { font-size: 18px !important; }
+        .login-form { max-width: 100%; }
       }
     </style>
   </head>
@@ -424,16 +430,20 @@ export const blogHomeHtml = `<!doctype html>
           <div id="unlockBadge" class="unlock-badge hidden">🔒 已通过访问验证</div>
         </div>
         <div class="login-content">
-          <div class="login-badge">
-            <div class="login-badge-dot"></div>
-            End-to-End Encrypted
+          <!-- Static content (shown on first login) -->
+          <div id="loginStaticContent">
+            <div class="login-badge">
+              <div class="login-badge-dot"></div>
+              End-to-End Encrypted
+            </div>
+            <h1 class="login-title">Edge Notes</h1>
+            <div class="login-subtitle">端到端加密私人笔记</div>
+            <p class="login-desc">在浏览器本地加密后上传，服务端只存储密文。输入密码即可进入你的私密笔记空间。</p>
           </div>
-          <h1 class="login-title">Edge Notes</h1>
-          <div class="login-subtitle">端到端加密私人笔记</div>
-          <p class="login-desc">在浏览器本地加密后上传，服务端只存储密文。输入密码即可进入你的私密笔记空间。</p>
+          <!-- Dynamic content (shown on unlock/checking) -->
+          <h1 id="loginTitle" class="login-title" style="display:none"></h1>
+          <p id="loginDesc" class="login-desc" style="display:none"></p>
           <div class="login-form">
-            <h1 id="loginTitle" class="login-title" style="display:none"></h1>
-            <p id="loginDesc" class="login-desc" style="display:none"></p>
             <div class="login-input-wrap">
               <span class="login-input-icon">🔑</span>
               <input id="passwordInput" class="input" type="password" placeholder="输入访问密码" />
@@ -585,6 +595,7 @@ export const blogHomeHtml = `<!doctype html>
         unlockBadge: document.getElementById('unlockBadge'),
         loginTitle: document.getElementById('loginTitle'),
         loginDesc: document.getElementById('loginDesc'),
+        loginStaticContent: document.getElementById('loginStaticContent'),
         passwordInput: document.getElementById('passwordInput'),
         passwordHelp: document.getElementById('passwordHelp'),
         loginBtn: document.getElementById('loginBtn'),
@@ -687,6 +698,8 @@ export const blogHomeHtml = `<!doctype html>
         els.passwordInput.disabled = checking;
         els.loginBtn.disabled = checking;
         const showDyn = checking || unlockOnly;
+        // Hide static content when showing dynamic content
+        els.loginStaticContent.style.display = showDyn ? 'none' : '';
         els.loginTitle.style.display = showDyn ? '' : 'none';
         els.loginDesc.style.display = showDyn ? '' : 'none';
         if (checking) {
