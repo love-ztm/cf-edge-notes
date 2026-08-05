@@ -472,6 +472,78 @@ export default {
 				return new Response(JSON.stringify(notes, null, 2), { headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': 'attachment; filename="notes.json"' } });
 			}
 
+			// ─── Notes Import ──────────────────────────────
+			if (rest === 'import' && request.method === 'POST') {
+				await ensureNotesSchema(env);
+				const vaultId = await getAuthedVaultId(request, env);
+				const body = (await request.json().catch(() => null)) as {
+					notes?: Array<{ title: string; content: string; created_at?: number; updated_at?: number; is_pinned?: number; tag_names?: string[] }>;
+					tags?: Array<{ name: string; color?: string }>;
+				} | null;
+				if (!body || !Array.isArray(body.notes)) return json({ ok: false, error: 'Invalid import data' }, 400);
+
+				const now = Date.now();
+				let notesImported = 0;
+				let tagsCreated = 0;
+				let tagRelsCreated = 0;
+
+				// Step 1: Create or find tags by name
+				const tagNameToId: Record<string, string> = {};
+				if (Array.isArray(body.tags)) {
+					for (const tag of body.tags) {
+						const name = (tag.name || '').trim();
+						if (!name) continue;
+						// Check if tag with same name already exists
+						const existing = await env.DB.prepare(
+							`SELECT id FROM tags WHERE vault_id = ? AND name = ?`
+						).bind(vaultId, name).first<{ id: string }>();
+						if (existing) {
+							tagNameToId[name] = existing.id;
+						} else {
+							const tagId = crypto.randomUUID();
+							await env.DB.prepare(
+								`INSERT INTO tags (id, vault_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)`
+							).bind(tagId, vaultId, name, tag.color || '#6366f1', now).run();
+							tagNameToId[name] = tagId;
+							tagsCreated++;
+						}
+					}
+				}
+
+				// Step 2: Import notes
+				for (const item of body.notes) {
+					const noteId = crypto.randomUUID();
+					const title = (item.title || '').trim() || '无标题';
+					const content = (item.content || '').trim();
+					const createdAt = item.created_at || now;
+					const updatedAt = item.updated_at || now;
+					const isPinned = item.is_pinned ? 1 : 0;
+
+					await env.DB.prepare(
+						`INSERT INTO notes (id, vault_id, title, content, created_at, updated_at, is_pinned) VALUES (?, ?, ?, ?, ?, ?, ?)`
+					).bind(noteId, vaultId, title, content, createdAt, updatedAt, isPinned).run();
+					notesImported++;
+
+					// Step 3: Link tags to note
+					if (Array.isArray(item.tag_names)) {
+						for (const tagName of item.tag_names) {
+							const tagId = tagNameToId[tagName.trim()];
+							if (tagId) {
+								await env.DB.prepare(
+									`INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)`
+								).bind(noteId, tagId).run();
+								tagRelsCreated++;
+							}
+						}
+					}
+				}
+
+				return json({
+					ok: true,
+					imported: { notes: notesImported, tags: tagsCreated, tag_relations: tagRelsCreated }
+				});
+			}
+
 			// Sub-routes with :id prefix
 			const idMatch = rest.match(/^([^/]+)(?:\/(.+))?$/);
 			if (!idMatch) return json({ ok: false, error: 'invalid path' }, 400);
@@ -514,14 +586,22 @@ export default {
 
 			// PUT /api/notes/:id/tags → set tags
 			if (subRoute === 'tags' && request.method === 'PUT') {
-				const body = (await request.json().catch(() => null)) as { tagIds?: string[] } | null;
-				const tagIds = body?.tagIds || [];
-				await env.DB.prepare(`DELETE FROM note_tags WHERE note_id = ?`).bind(noteId).run();
-				for (const tagId of tagIds) {
-					await env.DB.prepare(`INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)`).bind(noteId, tagId).run();
+					const body = (await request.json().catch(() => null)) as { tagIds?: string[] } | null;
+					const tagIds = body?.tagIds || [];
+					await env.DB.prepare(`DELETE FROM note_tags WHERE note_id = ?`).bind(noteId).run();
+					for (const tagId of tagIds) {
+						await env.DB.prepare(`INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)`).bind(noteId, tagId).run();
+					}
+					return json({ ok: true });
 				}
-				return json({ ok: true });
-			}
+
+				// GET /api/notes/:id/tags → get tags for a note
+				if (subRoute === 'tags' && request.method === 'GET') {
+					const tags = await env.DB.prepare(
+						`SELECT t.* FROM tags t JOIN note_tags nt ON t.id = nt.tag_id WHERE nt.note_id = ?`
+					).bind(noteId).all<Tag>();
+					return json({ ok: true, tags: tags.results ?? [] });
+				}
 
 			// POST /api/notes/:id/restore → restore from trash
 			if (subRoute === 'restore' && request.method === 'POST') {

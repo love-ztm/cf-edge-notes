@@ -381,6 +381,24 @@ export const blogHomeHtml = `<!doctype html>
       .tag-add-row .input { flex: 1; padding: 6px 10px; font-size: 12px; }
       .tag-color-input { width: 32px; height: 32px; border: none; border-radius: 8px; cursor: pointer; padding: 0; }
 
+      /* Settings panel */
+      .settings-panel { padding: 20px; margin-bottom: 12px; }
+      .settings-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+      .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+      .settings-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+      .settings-form { display: flex; flex-direction: column; gap: 10px; }
+      .settings-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+      .settings-field .input { width: 100%; padding: 8px 12px; font-size: 13px; }
+      .settings-field-row { display: flex; gap: 10px; }
+      .settings-field-row .settings-field { flex: 1; }
+      .settings-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .settings-status { font-size: 12px; margin-left: 8px; }
+      .settings-info { font-size: 12px; color: var(--muted); margin-top: 8px; }
+      .import-dialog { padding: 24px; width: min(520px, 100%); }
+      .import-preview { font-size: 13px; line-height: 1.8; }
+      .import-preview .import-stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+      .import-preview .import-stat:last-child { border-bottom: none; }
+
       /* Share dialog */
       .share-dialog { padding: 24px; width: min(480px, 100%); }
       .share-link-item {
@@ -468,6 +486,7 @@ export const blogHomeHtml = `<!doctype html>
           <button id="tagFilterBtn" class="btn secondary small" title="按标签筛选">🏷️ 标签</button>
           <button id="trashBtn" class="btn secondary small" title="回收站">🗑️ 回收站</button>
           <button id="exportBtn" class="btn secondary small" title="导出笔记">📤 导出</button>
+          <button id="settingsBtn" class="btn secondary small" title="设置与备份">⚙️ 设置</button>
           <button id="themeToggleBtn" class="btn secondary small icon-btn" title="切换主题">🌙</button>
           <button id="newBtn" class="btn">新建笔记</button>
           <button id="logoutBtn" class="btn secondary">退出</button>
@@ -485,6 +504,64 @@ export const blogHomeHtml = `<!doctype html>
             <button id="addTagBtn" class="btn small">添加</button>
           </div>
         </section>
+
+        <!-- Settings Panel -->
+        <section id="settingsPanel" class="card settings-panel hidden">
+          <div class="section-head">
+            <h2 class="section-title">⚙️ 设置</h2>
+            <button id="closeSettingsBtn" class="btn secondary small">关闭</button>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">WebDAV 备份配置</div>
+            <div class="settings-form">
+              <div class="settings-field">
+                <label>服务器地址</label>
+                <input id="webdavUrl" class="input" placeholder="https://dav.example.com/dav/" />
+              </div>
+              <div class="settings-field-row">
+                <div class="settings-field">
+                  <label>用户名</label>
+                  <input id="webdavUser" class="input" placeholder="username" />
+                </div>
+                <div class="settings-field">
+                  <label>密码</label>
+                  <input id="webdavPass" class="input" type="password" placeholder="password" />
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button id="webdavTestBtn" class="btn secondary small">测试连接</button>
+                <button id="webdavSaveBtn" class="btn secondary small">保存配置</button>
+                <span id="webdavStatus" class="settings-status"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">备份与恢复</div>
+            <div class="settings-actions">
+              <button id="webdavBackupBtn" class="btn secondary">📤 备份到 WebDAV</button>
+              <button id="webdavRestoreBtn" class="btn secondary">📥 从 WebDAV 恢复</button>
+              <button id="fileImportBtn" class="btn secondary">📁 从文件导入</button>
+              <input id="importFileInput" type="file" accept=".json" style="display:none" />
+            </div>
+            <div id="backupInfo" class="settings-info"></div>
+          </div>
+        </section>
+
+        <!-- Import Preview Modal -->
+        <div id="importModal" class="modal-overlay hidden">
+          <div class="modal import-dialog">
+            <div class="section-head">
+              <h2 class="section-title">导入预览</h2>
+              <button id="closeImportModalBtn" class="btn secondary small">取消</button>
+            </div>
+            <div id="importPreview" class="import-preview"></div>
+            <div class="settings-actions" style="margin-top:16px;">
+              <button id="confirmImportBtn" class="btn">确认导入</button>
+            </div>
+          </div>
+        </div>
 
         <!-- Trash View -->
         <section id="trashView" class="card feed hidden">
@@ -642,7 +719,25 @@ export const blogHomeHtml = `<!doctype html>
         closeShareBtn: document.getElementById('closeShareBtn'),
         shareExpiry: document.getElementById('shareExpiry'),
         createShareBtn: document.getElementById('createShareBtn'),
-        shareLinks: document.getElementById('shareLinks')
+        shareLinks: document.getElementById('shareLinks'),
+        settingsBtn: document.getElementById('settingsBtn'),
+        settingsPanel: document.getElementById('settingsPanel'),
+        closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+        webdavUrl: document.getElementById('webdavUrl'),
+        webdavUser: document.getElementById('webdavUser'),
+        webdavPass: document.getElementById('webdavPass'),
+        webdavTestBtn: document.getElementById('webdavTestBtn'),
+        webdavSaveBtn: document.getElementById('webdavSaveBtn'),
+        webdavStatus: document.getElementById('webdavStatus'),
+        webdavBackupBtn: document.getElementById('webdavBackupBtn'),
+        webdavRestoreBtn: document.getElementById('webdavRestoreBtn'),
+        fileImportBtn: document.getElementById('fileImportBtn'),
+        importFileInput: document.getElementById('importFileInput'),
+        backupInfo: document.getElementById('backupInfo'),
+        importModal: document.getElementById('importModal'),
+        closeImportModalBtn: document.getElementById('closeImportModalBtn'),
+        importPreview: document.getElementById('importPreview'),
+        confirmImportBtn: document.getElementById('confirmImportBtn')
       };
 
       // ─── Theme ────────────────────────────
@@ -1289,6 +1384,197 @@ export const blogHomeHtml = `<!doctype html>
         URL.revokeObjectURL(url);
       }
 
+      // ─── WebDAV & Settings ────────────────
+      function getWebdavConfig() {
+        try { return JSON.parse(localStorage.getItem('webdav_config') || '{}'); } catch (e) { return {}; }
+      }
+      function saveWebdavConfig(config) {
+        localStorage.setItem('webdav_config', JSON.stringify(config));
+      }
+      function loadWebdavConfigToUI() {
+        const cfg = getWebdavConfig();
+        els.webdavUrl.value = cfg.url || '';
+        els.webdavUser.value = cfg.user || '';
+        els.webdavPass.value = cfg.pass || '';
+        updateBackupInfo();
+      }
+      function updateBackupInfo() {
+        const cfg = getWebdavConfig();
+        if (cfg.lastBackup) {
+          els.backupInfo.textContent = '上次备份: ' + new Date(cfg.lastBackup).toLocaleString('zh-CN');
+        } else {
+          els.backupInfo.textContent = '尚未备份过';
+        }
+      }
+      function webdavAuth(user, pass) {
+        return 'Basic ' + btoa(unescape(encodeURIComponent(user + ':' + pass)));
+      }
+      async function webdavRequest(path, method, body, contentType) {
+        const cfg = getWebdavConfig();
+        if (!cfg.url) throw new Error('请先配置 WebDAV 服务器地址');
+        const baseUrl = cfg.url.replace(/\/+$/, '');
+        const url = baseUrl + '/' + path.replace(/^\/+/, '');
+        const headers = { 'Authorization': webdavAuth(cfg.user || '', cfg.pass || '') };
+        if (contentType) headers['Content-Type'] = contentType;
+        const opts = { method, headers };
+        if (body !== undefined) opts.body = body;
+        const res = await fetch(url, opts);
+        if (!res.ok) {
+          const text = await res.text().catch(function () { return ''; });
+          throw new Error('WebDAV 请求失败 (' + res.status + '): ' + (text.slice(0, 100) || res.statusText));
+        }
+        return res;
+      }
+      async function webdavTestConnection() {
+        const cfg = getWebdavConfig();
+        if (!cfg.url) throw new Error('请填写服务器地址');
+        // Try PROPFIND to test connection
+        const baseUrl = cfg.url.replace(/\/+$/, '');
+        const res = await fetch(baseUrl, {
+          method: 'PROPFIND',
+          headers: {
+            'Authorization': webdavAuth(cfg.user || '', cfg.pass || ''),
+            'Depth': '0',
+          },
+        });
+        if (!res.ok) throw new Error('连接失败 (' + res.status + '): ' + res.statusText);
+        return true;
+      }
+
+      // Build backup data (encrypted ciphertext + tags)
+      async function buildBackupData() {
+        const notesData = await api('/api/notes');
+        const tagsData = await api('/api/tags');
+        const notes = notesData.notes || [];
+        const tags = tagsData.tags || [];
+        // Build tag id -> name map
+        const tagMap = {};
+        tags.forEach(function (t) { tagMap[t.id] = t.name; });
+        // Fetch note-tag associations
+        const notesWithTags = [];
+        for (const note of notes) {
+          let tagNames = [];
+          try {
+            const rels = await api('/api/notes/' + encodeURIComponent(note.id) + '/tags');
+            if (rels.tags) {
+              tagNames = rels.tags.map(function (t) { return t.name; });
+            }
+          } catch (e) { /* ignore */ }
+          notesWithTags.push({
+            id: note.id,
+            title: note.title,
+            content: note.content,
+            created_at: note.created_at,
+            updated_at: note.updated_at,
+            is_pinned: note.is_pinned || 0,
+            tag_names: tagNames,
+          });
+        }
+        return {
+          version: 1,
+          app: 'edge-notes',
+          exported_at: Date.now(),
+          notes: notesWithTags,
+          tags: tags.map(function (t) { return { name: t.name, color: t.color }; }),
+        };
+      }
+
+      async function backupToWebdav() {
+        els.webdavBackupBtn.disabled = true;
+        els.webdavBackupBtn.textContent = '备份中…';
+        try {
+          const data = await buildBackupData();
+          const json = JSON.stringify(data, null, 2);
+          await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
+          const cfg = getWebdavConfig();
+          cfg.lastBackup = Date.now();
+          saveWebdavConfig(cfg);
+          updateBackupInfo();
+          setStatus('备份成功 (' + data.notes.length + ' 条笔记)');
+        } catch (e) {
+          setStatus('备份失败: ' + e.message);
+        } finally {
+          els.webdavBackupBtn.disabled = false;
+          els.webdavBackupBtn.textContent = '📤 备份到 WebDAV';
+        }
+      }
+
+      async function restoreFromWebdav() {
+        if (!confirm('从 WebDAV 恢复将追加笔记到当前账户，不会覆盖现有笔记。确定继续？')) return;
+        els.webdavRestoreBtn.disabled = true;
+        els.webdavRestoreBtn.textContent = '恢复中…';
+        try {
+          const res = await webdavRequest('edge-notes/backup-latest.json', 'GET');
+          const data = await res.json();
+          showImportPreview(data);
+        } catch (e) {
+          setStatus('恢复失败: ' + e.message);
+        } finally {
+          els.webdavRestoreBtn.disabled = false;
+          els.webdavRestoreBtn.textContent = '📥 从 WebDAV 恢复';
+        }
+      }
+
+      function showImportPreview(data) {
+        if (!data || !Array.isArray(data.notes)) {
+          setStatus('无效的备份文件');
+          return;
+        }
+        const noteCount = data.notes.length;
+        const tagCount = (data.tags || []).length;
+        const backupDate = data.exported_at ? new Date(data.exported_at).toLocaleString('zh-CN') : '未知';
+        const app = data.app || 'unknown';
+        els.importPreview.innerHTML =
+          '<div class="import-stat"><span>来源应用</span><span>' + escapeHtml(app) + '</span></div>' +
+          '<div class="import-stat"><span>备份时间</span><span>' + backupDate + '</span></div>' +
+          '<div class="import-stat"><span>笔记数量</span><span>' + noteCount + ' 条</span></div>' +
+          '<div class="import-stat"><span>标签数量</span><span>' + tagCount + ' 个</span></div>';
+        els.importModal.classList.remove('hidden');
+        els.importModal._importData = data;
+      }
+
+      async function confirmImport() {
+        const data = els.importModal._importData;
+        if (!data) return;
+        els.confirmImportBtn.disabled = true;
+        els.confirmImportBtn.textContent = '导入中…';
+        try {
+          const result = await api('/api/notes/import', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: data.notes, tags: data.tags }),
+          });
+          els.importModal.classList.add('hidden');
+          await refreshNotes();
+          await refreshTags();
+          const stats = result.imported;
+          setStatus('导入完成: ' + stats.notes + ' 条笔记, ' + stats.tags + ' 个新标签');
+        } catch (e) {
+          setStatus('导入失败: ' + e.message);
+        } finally {
+          els.confirmImportBtn.disabled = false;
+          els.confirmImportBtn.textContent = '确认导入';
+        }
+      }
+
+      function triggerFileImport() {
+        els.importFileInput.click();
+      }
+
+      function handleFileImport(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const data = JSON.parse(e.target.result);
+            showImportPreview(data);
+          } catch (err) {
+            setStatus('文件解析失败: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+      }
+
       // ─── Share ────────────────────────────
       let currentShareNoteId = null;
 
@@ -1513,9 +1799,77 @@ export const blogHomeHtml = `<!doctype html>
         loadShareLinks(currentShareNoteId);
       };
 
+      // ─── Settings Event Listeners ─────────
+      els.settingsBtn.onclick = function () {
+        els.settingsPanel.classList.toggle('hidden');
+        if (!els.settingsPanel.classList.contains('hidden')) {
+          els.tagPanel.classList.add('hidden');
+          els.trashView.classList.add('hidden');
+          els.mainFeed.classList.add('hidden');
+          loadWebdavConfigToUI();
+        } else {
+          els.mainFeed.classList.remove('hidden');
+        }
+      };
+
+      els.closeSettingsBtn.onclick = function () {
+        els.settingsPanel.classList.add('hidden');
+        els.mainFeed.classList.remove('hidden');
+      };
+
+      els.webdavSaveBtn.onclick = function () {
+        saveWebdavConfig({
+          url: els.webdavUrl.value.trim(),
+          user: els.webdavUser.value.trim(),
+          pass: els.webdavPass.value,
+          lastBackup: getWebdavConfig().lastBackup || null,
+        });
+        els.webdavStatus.textContent = '✓ 配置已保存';
+        els.webdavStatus.style.color = 'var(--accent)';
+        setTimeout(function () { els.webdavStatus.textContent = ''; }, 2000);
+        setStatus('WebDAV 配置已保存');
+      };
+
+      els.webdavTestBtn.onclick = async function () {
+        // Save first, then test
+        saveWebdavConfig({
+          url: els.webdavUrl.value.trim(),
+          user: els.webdavUser.value.trim(),
+          pass: els.webdavPass.value,
+          lastBackup: getWebdavConfig().lastBackup || null,
+        });
+        els.webdavTestBtn.disabled = true;
+        els.webdavTestBtn.textContent = '测试中…';
+        try {
+          await webdavTestConnection();
+          els.webdavStatus.textContent = '✓ 连接成功';
+          els.webdavStatus.style.color = 'var(--accent)';
+          setStatus('WebDAV 连接成功');
+        } catch (e) {
+          els.webdavStatus.textContent = '✗ ' + e.message;
+          els.webdavStatus.style.color = 'var(--danger)';
+          setStatus('连接失败: ' + e.message);
+        } finally {
+          els.webdavTestBtn.disabled = false;
+          els.webdavTestBtn.textContent = '测试连接';
+        }
+      };
+
+      els.webdavBackupBtn.onclick = function () { backupToWebdav(); };
+      els.webdavRestoreBtn.onclick = function () { restoreFromWebdav(); };
+      els.fileImportBtn.onclick = function () { triggerFileImport(); };
+      els.importFileInput.onchange = function () {
+        if (els.importFileInput.files.length) handleFileImport(els.importFileInput.files[0]);
+        els.importFileInput.value = '';
+      };
+      els.closeImportModalBtn.onclick = function () { els.importModal.classList.add('hidden'); };
+      els.confirmImportBtn.onclick = function () { confirmImport(); };
+
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
+          if (!els.importModal.classList.contains('hidden')) { els.importModal.classList.add('hidden'); return; }
           if (!els.shareModal.classList.contains('hidden')) { closeShareDialog(); return; }
+          if (!els.settingsPanel.classList.contains('hidden')) { els.settingsPanel.classList.add('hidden'); els.mainFeed.classList.remove('hidden'); return; }
           if (!els.editorModal.classList.contains('hidden')) { closeComposer(); return; }
         }
         const isSave = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's';
