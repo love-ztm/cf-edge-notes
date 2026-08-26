@@ -156,7 +156,21 @@ async function ensureAppMetaTable(env: AppEnv) {
 	).run();
 }
 
+// Schema DDL only needs to run once per isolate. Without this gate every API request
+// paid for ~20 sequential D1 round-trips before touching any real data.
+let schemaReady: Promise<void> | null = null;
+
 async function ensureNotesSchema(env: AppEnv) {
+	if (!schemaReady) {
+		schemaReady = runSchemaMigrations(env).catch((err) => {
+			schemaReady = null; // let the next request retry a failed migration
+			throw err;
+		});
+	}
+	return schemaReady;
+}
+
+async function runSchemaMigrations(env: AppEnv) {
 	await env.DB.prepare(
 		`CREATE TABLE IF NOT EXISTS notes (
 			id TEXT PRIMARY KEY,
@@ -171,63 +185,62 @@ async function ensureNotesSchema(env: AppEnv) {
 	const columns = await env.DB.prepare('PRAGMA table_info(notes)').all<{ name: string }>();
 	const colNames = (columns.results ?? []).map((c) => c.name);
 
+	const addColumns: string[] = [];
 	if (!colNames.includes('vault_id')) {
-		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN vault_id TEXT NOT NULL DEFAULT 'default'`).run();
+		addColumns.push(`ALTER TABLE notes ADD COLUMN vault_id TEXT NOT NULL DEFAULT 'default'`);
 	}
 	if (!colNames.includes('is_pinned')) {
-		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`).run();
+		addColumns.push(`ALTER TABLE notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`);
 	}
 	if (!colNames.includes('deleted_at')) {
-		await env.DB.prepare(`ALTER TABLE notes ADD COLUMN deleted_at INTEGER DEFAULT NULL`).run();
+		addColumns.push(`ALTER TABLE notes ADD COLUMN deleted_at INTEGER DEFAULT NULL`);
+	}
+	for (const sql of addColumns) {
+		await env.DB.prepare(sql).run();
 	}
 
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_vault_updated_at ON notes(vault_id, updated_at DESC)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_pinned ON notes(vault_id, is_pinned DESC, updated_at DESC)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_trash ON notes(vault_id, deleted_at)`).run();
-
-	await env.DB.prepare(
-		`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(id UNINDEXED, title, content)`
-	).run();
-
-	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-		INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
-	END`).run();
-	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-		DELETE FROM notes_fts WHERE id = old.id;
-		INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
-	END`).run();
-	await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-		DELETE FROM notes_fts WHERE id = old.id;
-	END`).run();
-
-	await ensureAppMetaTable(env);
-
-	// Ensure tags tables
-	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS tags (
-		id TEXT PRIMARY KEY, vault_id TEXT NOT NULL DEFAULT 'default',
-		name TEXT NOT NULL, color TEXT DEFAULT '#6366f1', created_at INTEGER NOT NULL
-	)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tags_vault ON tags(vault_id)`).run();
-	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_tags (
-		note_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (note_id, tag_id)
-	)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id)`).run();
-
-	// Ensure note_images table
-	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_images (
-		id TEXT PRIMARY KEY, note_id TEXT NOT NULL DEFAULT '', vault_id TEXT NOT NULL DEFAULT 'default',
-		filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL,
-		r2_key TEXT NOT NULL, created_at INTEGER NOT NULL
-	)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_images_vault ON note_images(vault_id)`).run();
-
-	// Ensure note_shares table
-	await env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_shares (
-		token TEXT PRIMARY KEY, note_id TEXT NOT NULL, vault_id TEXT NOT NULL,
-		created_at INTEGER NOT NULL, expires_at INTEGER DEFAULT NULL, is_active INTEGER NOT NULL DEFAULT 1
-	)`).run();
-	await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_shares_note ON note_shares(note_id)`).run();
+	// One batch instead of ~20 sequential round-trips
+	await env.DB.batch([
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_vault_updated_at ON notes(vault_id, updated_at DESC)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_pinned ON notes(vault_id, is_pinned DESC, updated_at DESC)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_notes_trash ON notes(vault_id, deleted_at)`),
+		env.DB.prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(id UNINDEXED, title, content)`),
+		env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+			INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
+		END`),
+		env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+			DELETE FROM notes_fts WHERE id = old.id;
+			INSERT INTO notes_fts (id, title, content) VALUES (new.id, new.title, new.content);
+		END`),
+		env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+			DELETE FROM notes_fts WHERE id = old.id;
+		END`),
+		env.DB.prepare(`CREATE TABLE IF NOT EXISTS app_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`),
+		env.DB.prepare(`CREATE TABLE IF NOT EXISTS tags (
+			id TEXT PRIMARY KEY, vault_id TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL, color TEXT DEFAULT '#6366f1', created_at INTEGER NOT NULL
+		)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tags_vault ON tags(vault_id)`),
+		env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_tags (
+			note_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (note_id, tag_id)
+		)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id)`),
+		env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_images (
+			id TEXT PRIMARY KEY, note_id TEXT NOT NULL DEFAULT '', vault_id TEXT NOT NULL DEFAULT 'default',
+			filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL,
+			r2_key TEXT NOT NULL, created_at INTEGER NOT NULL
+		)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_images_vault ON note_images(vault_id)`),
+		env.DB.prepare(`CREATE TABLE IF NOT EXISTS note_shares (
+			token TEXT PRIMARY KEY, note_id TEXT NOT NULL, vault_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL, expires_at INTEGER DEFAULT NULL, is_active INTEGER NOT NULL DEFAULT 1
+		)`),
+		env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_note_shares_note ON note_shares(note_id)`),
+	]);
 }
 
 async function getMeta(env: AppEnv, key: string) {

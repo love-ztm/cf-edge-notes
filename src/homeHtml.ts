@@ -1086,10 +1086,17 @@ export const blogHomeHtml = `<!doctype html>
         els.passwordInput.value = '';
       }
 
-      async function getCryptoConfig() {
-        const data = await api('/api/crypto-config');
-        state.vaultSalt = data.vaultSalt;
-        return data;
+      // Cache the crypto config so unlock doesn't pay for a round-trip it can prefetch
+      let cryptoConfigPromise = null;
+
+      function getCryptoConfig() {
+        if (!cryptoConfigPromise) {
+          cryptoConfigPromise = api('/api/crypto-config').then(function (data) {
+            state.vaultSalt = data.vaultSalt;
+            return data;
+          }).catch(function (e) { cryptoConfigPromise = null; throw e; });
+        }
+        return cryptoConfigPromise;
       }
 
       async function refreshMeta() {
@@ -1241,8 +1248,9 @@ export const blogHomeHtml = `<!doctype html>
           allItem.appendChild(allCount);
         }
         allItem.onclick = function () {
+          if (!state.activeTagFilter) return;
           state.activeTagFilter = null;
-          renderTagList(); refreshNotes();
+          renderTagList(); applyFilters();
           setStatus('显示全部笔记');
         };
         els.sidebarTagList.appendChild(allItem);
@@ -1257,7 +1265,7 @@ export const blogHomeHtml = `<!doctype html>
           el.onclick = function () {
             state.activeTagFilter = state.activeTagFilter === tag.id ? null : tag.id;
             renderTagList();
-            refreshNotes();
+            applyFilters();
           };
           const del = document.createElement('span');
           del.className = 'tag-del';
@@ -1268,8 +1276,7 @@ export const blogHomeHtml = `<!doctype html>
             if (!confirm('删除标签 "' + tag.name + '"？')) return;
             await api('/api/tags/' + encodeURIComponent(tag.id), { method: 'DELETE' });
             if (state.activeTagFilter === tag.id) state.activeTagFilter = null;
-            await refreshTags();
-            await refreshNotes();
+            await Promise.all([refreshTags(), refreshNotes()]);
             setStatus('标签已删除');
           };
           el.appendChild(del);
@@ -1647,12 +1654,24 @@ export const blogHomeHtml = `<!doctype html>
           state.notes = []; state.allNotes = [];
           await refreshMeta(); renderList(); return;
         }
-        const q = els.searchInput.value.trim();
-        const data = await api('/api/notes' + (state.activeTagFilter ? '?tag=' + encodeURIComponent(state.activeTagFilter) : ''));
+        // Always fetch the full set; tag filtering happens locally so tag clicks are instant
+        const data = await api('/api/notes');
         state.allNotes = await decryptNotes(data.notes || []);
-        state.notes = filterNotes(state.allNotes, q);
         state.noteCountMeta = state.allNotes.length;
         updateVaultUi();
+        applyFilters();
+      }
+
+      // Re-apply tag + search filters against the in-memory notes (no network, no re-decrypt)
+      function applyFilters() {
+        const q = els.searchInput.value.trim();
+        let notes = state.allNotes;
+        if (state.activeTagFilter) {
+          notes = notes.filter(function (n) {
+            return (n.tags || []).some(function (t) { return t.id === state.activeTagFilter; });
+          });
+        }
+        state.notes = filterNotes(notes, q);
         state.expandedIds.forEach(function (id) {
           if (!state.notes.find(function (n) { return n.id === id; })) state.expandedIds.delete(id);
         });
@@ -1678,19 +1697,8 @@ export const blogHomeHtml = `<!doctype html>
         els.editorPanel.classList.add('open');
         updateModalUi();
         els.editorTitle.focus();
-        // Load note tags
-        if (note) {
-          loadNoteTagsForEditor(note.id);
-        } else {
-          setEditorTagSelection([]);
-        }
-      }
-
-      async function loadNoteTagsForEditor(noteId) {
-        try {
-          const noteTagData = await api('/api/notes/' + encodeURIComponent(noteId) + '/tags');
-          setEditorTagSelection((noteTagData.tags || []).map(function (t) { return t.id; }));
-        } catch (e) { setEditorTagSelection([]); }
+        // Tags already came down with the note list — no extra round-trip needed
+        setEditorTagSelection(note ? (note.tags || []).map(function (t) { return t.id; }) : []);
       }
 
       async function closeComposer() {
@@ -1743,8 +1751,7 @@ export const blogHomeHtml = `<!doctype html>
         state.composerSaved = true;
         closeComposer();
         await cleanupZeroTags();
-        await refreshNotes();
-        await refreshTags();
+        await Promise.all([refreshNotes(), refreshTags()]);
         setStatus('已保存');
       }
 
@@ -1753,8 +1760,7 @@ export const blogHomeHtml = `<!doctype html>
         if (!confirm('移入回收站？')) return;
         await api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' });
         await cleanupZeroTags();
-        await refreshNotes();
-        await refreshTags();
+        await Promise.all([refreshNotes(), refreshTags()]);
         setStatus('已移入回收站');
       }
 
@@ -1764,8 +1770,7 @@ export const blogHomeHtml = `<!doctype html>
         state.vaultKey = await deriveVaultKey(passphrase, config.vaultSalt);
         state.vaultUnlocked = true;
         state.unlockError = '';
-        await refreshNotes();
-        await refreshTags();
+        await Promise.all([refreshNotes(), refreshTags()]);
       }
 
       async function checkSession() {
@@ -1774,6 +1779,8 @@ export const blogHomeHtml = `<!doctype html>
         if (data.authenticated) {
           state.sessionAuthenticated = true;
           state.vaultUnlocked = false; state.vaultKey = null; state.unlockError = '';
+          // Warm the salt request while the user is still typing their password
+          getCryptoConfig().catch(function () { /* retried on unlock */ });
           await refreshMeta();
           state.authMode = 'unlock';
           showLogin(); renderList();
@@ -2254,12 +2261,13 @@ export const blogHomeHtml = `<!doctype html>
       els.searchInput.addEventListener('input', function () {
         updateSearchUi();
         clearTimeout(state.searchTimer);
-        state.searchTimer = setTimeout(function () { refreshNotes().catch(function (e) { setStatus(e.message); }); }, 260);
+        // Search runs against already-decrypted notes, so it can be near-instant
+        state.searchTimer = setTimeout(applyFilters, 120);
       });
 
       els.clearSearchBtn.onclick = function () {
         els.searchInput.value = ''; updateSearchUi();
-        refreshNotes().catch(function (e) { setStatus(e.message); });
+        applyFilters();
       };
 
       els.newBtn.onclick = function () { openComposer(null); };
