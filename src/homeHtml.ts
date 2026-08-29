@@ -2192,7 +2192,9 @@ export const blogHomeHtml = `<!doctype html>
 
       // ─── Auto Backup ──────────────────────
       const AUTO_BACKUP_KEY = 'auto_backup_config';
-      let autoBackupTimer = null;
+      // Scheduled backups run on Cloudflare's cron (server-side), so the schedule
+      // works with the page closed. The UI just reads/writes the server config.
+      let serverBackupConfig = null;
 
       function getAutoBackupConfig() {
         try { return JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)) || {}; }
@@ -2201,6 +2203,10 @@ export const blogHomeHtml = `<!doctype html>
 
       function saveAutoBackupConfig(cfg) {
         localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(cfg));
+      }
+
+      function getServerBackupConfig() {
+        return serverBackupConfig;
       }
 
       function getSelectedDays() {
@@ -2232,7 +2238,7 @@ export const blogHomeHtml = `<!doctype html>
       }
 
       function updateAutoBackupInfo() {
-        var cfg = getAutoBackupConfig();
+        var cfg = getServerBackupConfig() || {};
         var el = document.getElementById('autoBackupInfo');
         if (!el) return;
         // Update on/off label
@@ -2246,83 +2252,66 @@ export const blogHomeHtml = `<!doctype html>
         var time = cfg.time || '03:00';
         var keep = cfg.keepCount || 7;
         var last = cfg.lastBackup;
-        el.textContent = '每周 ' + days + ' ' + time + ' · 保留 ' + keep + ' 份' +
+        el.textContent = '☁️ Cloudflare 定时执行（无需保持页面打开）· ' + days + ' ' + time + ' · 保留 ' + keep + ' 份' +
           (last ? ' · 上次: ' + new Date(last).toLocaleString('zh-CN') : '');
       }
 
-      function shouldBackupNow(cfg) {
-        if (!cfg.enabled) return false;
-        var now = new Date();
-        var dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
-        var days = cfg.days || [1,2,3,4,5];
-        if (days.indexOf(dayOfWeek) < 0) return false;
-        var parts = (cfg.time || '03:00').split(':');
-        var targetHour = parseInt(parts[0]) || 3;
-        var targetMin = parseInt(parts[1]) || 0;
-        // Check within 1-minute window
-        if (now.getHours() !== targetHour || now.getMinutes() !== targetMin) return false;
-        // Avoid double-backup: skip if lastBackup was within last 90 seconds
-        var last = cfg.lastBackup || 0;
-        if (Date.now() - last < 90000) return false;
-        return true;
+      // Push the schedule from the UI to the server (Cloudflare cron executes it)
+      async function syncBackupConfigToServer() {
+        var cfg = getAutoBackupConfig();
+        var dav = getWebdavConfig();
+        var payload = {
+          enabled: !!cfg.enabled,
+          days: cfg.days || [1,2,3,4,5],
+          time: cfg.time || '03:00',
+          keepCount: cfg.keepCount || 7,
+          url: dav.url || '',
+          user: dav.user || '',
+          pass: dav.pass || ''
+        };
+        if (payload.enabled && !payload.url) {
+          setStatus('请先配置 WebDAV 服务器地址再启用定时备份');
+          payload.enabled = false;
+          cfg.enabled = false;
+          saveAutoBackupConfig(cfg);
+          els.autoBackupToggle.checked = false;
+        }
+        var res = await api('/api/backup-config', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res && res.ok) {
+          await loadServerBackupConfig();
+          if (payload.enabled) setStatus('定时备份已交给 Cloudflare 执行，无需保持页面打开');
+        }
+        updateAutoBackupInfo();
       }
 
-      async function cleanupOldBackups(keepCount) {
+      // Load the server-side schedule; migrate an old browser-only schedule on first run
+      async function loadServerBackupConfig() {
         try {
-          // Remove the legacy backup-latest.json pointer (old versions wrote it on every backup)
-          try { await webdavRequest('edge-notes/backup-latest.json', 'DELETE'); } catch (e) { /* ignore */ }
-          var res = await webdavProxy('PROPFIND', webdavBaseUrl() + '/edge-notes/', undefined, { depth: '1' });
-          if (res.status < 200 || res.status >= 300) return;
-          var text = res.body || '';
-          // Find backup filenames anywhere in the PROPFIND XML (namespace-agnostic)
-          var files = [];
-          var seen = {};
-          var re = /backup-[A-Za-z0-9._-]*\\.json/gi;
-          var m;
-          while ((m = re.exec(text)) !== null) {
-            var name = m[0];
-            if (name.indexOf('backup-') === 0 && name !== 'backup-latest.json' && !seen[name]) {
-              seen[name] = 1;
-              files.push(name);
+          var data = await api('/api/backup-config');
+          if (data.config) {
+            serverBackupConfig = data.config;
+            if (els.autoBackupToggle) els.autoBackupToggle.checked = !!data.config.enabled;
+            if (data.config.days) setSelectedDays(data.config.days);
+            if (els.autoBackupTime) els.autoBackupTime.value = data.config.time || '03:00';
+            if (els.autoBackupKeep) els.autoBackupKeep.value = String(data.config.keepCount || 7);
+            // remember lastBackup time for the info line
+            var local = getAutoBackupConfig();
+            local.lastBackup = data.config.lastBackup || local.lastBackup;
+            if (serverBackupConfig) serverBackupConfig.lastBackup = data.config.lastBackup;
+            saveAutoBackupConfig(local);
+          } else {
+            serverBackupConfig = null;
+            // One-time migration: push a schedule previously saved in this browser
+            var old = getAutoBackupConfig();
+            if (old.enabled) {
+              await syncBackupConfigToServer();
             }
           }
-          // Sort descending by name (date in filename sorts naturally)
-          files.sort().reverse();
-          // Delete files beyond keep count
-          for (var i = keepCount; i < files.length; i++) {
-            try { await webdavRequest('edge-notes/' + files[i], 'DELETE'); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore cleanup errors */ }
-      }
-
-      function startAutoBackupTimer() {
-        stopAutoBackupTimer();
-        var cfg = getAutoBackupConfig();
-        if (!cfg.enabled || !getWebdavConfig().url) return;
-        // Check every 30 seconds
-        autoBackupTimer = setInterval(async function () {
-          var c = getAutoBackupConfig();
-          if (shouldBackupNow(c)) {
-            try {
-              var data = await buildBackupData();
-              var json = JSON.stringify(data, null, 2);
-              await ensureBackupDir();
-              // Save with date-time filename (one file per backup)
-              var now = new Date();
-              var fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
-              await webdavRequest(fname, 'PUT', json, 'application/json');
-              // Cleanup old backups (also removes the legacy backup-latest.json)
-              await cleanupOldBackups(c.keepCount || 7);
-              c.lastBackup = Date.now();
-              saveAutoBackupConfig(c);
-              updateAutoBackupInfo();
-            } catch (e) { /* silent fail for auto backup */ }
-          }
-        }, 30 * 1000);
-      }
-
-      function stopAutoBackupTimer() {
-        if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; }
+        } catch (e) { /* not logged in yet etc. */ }
+        updateAutoBackupInfo();
       }
 
       // ─── Share ────────────────────────────
@@ -2461,12 +2450,7 @@ export const blogHomeHtml = `<!doctype html>
         if (isSettings) {
           state.showingTrash = false;
           loadWebdavConfigToUI();
-          var abCfg = getAutoBackupConfig();
-          els.autoBackupToggle.checked = !!abCfg.enabled;
-          setSelectedDays(abCfg.days || [1,2,3,4,5]);
-          els.autoBackupTime.value = abCfg.time || '03:00';
-          els.autoBackupKeep.value = String(abCfg.keepCount || 7);
-          updateAutoBackupInfo();
+          loadServerBackupConfig();
         } else if (isTrash) {
           state.showingTrash = true;
           loadTrash();
@@ -2624,7 +2608,8 @@ export const blogHomeHtml = `<!doctype html>
       els.exportJsonBtn.onclick = function () { exportAllNotes('json'); };
       els.exportMdBtn.onclick = function () { exportAllNotes('markdown'); };
 
-      // Auto backup controls
+      // Auto backup controls — the schedule is stored server-side and executed by
+      // Cloudflare's cron trigger, so it fires even with the page closed.
       function saveAbConfigFromUI() {
         var cfg = getAutoBackupConfig();
         cfg.enabled = els.autoBackupToggle.checked;
@@ -2632,7 +2617,7 @@ export const blogHomeHtml = `<!doctype html>
         cfg.time = els.autoBackupTime.value || '03:00';
         cfg.keepCount = parseInt(els.autoBackupKeep.value) || 7;
         saveAutoBackupConfig(cfg);
-        if (cfg.enabled) startAutoBackupTimer(); else stopAutoBackupTimer();
+        syncBackupConfigToServer().catch(function (e) { setStatus('定时备份配置保存失败: ' + (e.message || '')); });
         updateAutoBackupInfo();
       }
       els.autoBackupToggle.onchange = saveAbConfigFromUI;
@@ -2665,7 +2650,7 @@ export const blogHomeHtml = `<!doctype html>
       // ─── Init ─────────────────────────────
       updateSearchUi(); updateModalUi();
       checkSession().catch(function () { showLogin(); });
-      startAutoBackupTimer();
+      loadServerBackupConfig();
     </script>
   </body>
 </html>`;

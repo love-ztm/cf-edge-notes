@@ -481,6 +481,50 @@ export default {
 			return json({ ok: res.ok, status: res.status, statusText: res.statusText, body: text.slice(0, 2_000_000) });
 		}
 
+		// ─── Scheduled backup config (runs via Cloudflare Cron, no browser needed) ───
+		if (url.pathname === '/api/backup-config' && request.method === 'GET') {
+			const vaultId = await getAuthedVaultId(request, env);
+			const raw = await getMeta(env, `webdav_backup_config:${vaultId}`);
+			if (!raw) return json({ ok: true, config: null });
+			try {
+				const cfg = JSON.parse(raw) as Record<string, unknown>;
+				const hasPass = Boolean(cfg.pass);
+				delete cfg.pass;
+				return json({ ok: true, config: { ...cfg, hasPass } });
+			} catch {
+				return json({ ok: true, config: null });
+			}
+		}
+
+		if (url.pathname === '/api/backup-config' && request.method === 'POST') {
+			const vaultId = await getAuthedVaultId(request, env);
+			const body = (await request.json().catch(() => null)) as {
+				enabled?: boolean; days?: number[]; time?: string; keepCount?: number;
+				url?: string; user?: string; pass?: string;
+			} | null;
+			if (!body) return json({ ok: false, error: 'invalid body' }, 400);
+			if (body.enabled && !/^https?:\/\//i.test(body.url || '')) {
+				return json({ ok: false, error: '请先配置有效的 WebDAV 服务器地址' }, 400);
+			}
+			const key = `webdav_backup_config:${vaultId}`;
+			let cfg: Record<string, unknown> = {};
+			if (!body.enabled) {
+				// Keep the config around (minus enabled) so re-enabling keeps url/user
+				const raw = await getMeta(env, key);
+				if (raw) { try { cfg = JSON.parse(raw); } catch { /* fresh */ } }
+			}
+			cfg.enabled = Boolean(body.enabled);
+			cfg.days = Array.isArray(body.days) && body.days.length ? body.days.slice(0, 7).map(Number) : [1, 2, 3, 4, 5];
+			cfg.time = /^\d{2}:\d{2}$/.test(body.time || '') ? body.time : '03:00';
+			cfg.keepCount = Math.min(Math.max(Number(body.keepCount) || 7, 1), 50);
+			cfg.url = (body.url || (cfg.url as string) || '').trim();
+			cfg.user = body.user ?? (cfg.user as string) ?? '';
+			if (body.pass) cfg.pass = body.pass;
+			if (!cfg.url) delete cfg.enabled;
+			await setMeta(env, key, JSON.stringify(cfg));
+			return json({ ok: true });
+		}
+
 		// ─── Notes CRUD ────────────────────────────────
 		if (url.pathname === '/api/notes' && request.method === 'GET') {
 			await ensureNotesSchema(env);
@@ -795,5 +839,133 @@ export default {
 		const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 		await env.DB.prepare(`DELETE FROM note_shares WHERE expires_at IS NOT NULL AND expires_at < ?`).bind(Date.now()).run();
 		await env.DB.prepare(`DELETE FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?`).bind(thirtyDaysAgo).run();
+		// Run due WebDAV backups (configured per vault in settings)
+		await runDueWebdavBackups(env);
 	},
 } satisfies ExportedHandler<Env>;
+
+// ─── Scheduled WebDAV backup ──────────────────────────────
+
+// Cron fires every 5 minutes; a backup is due when the schedule's weekday+time
+// falls inside the current 5-minute slot. Times are evaluated in Beijing time.
+const BACKUP_TIME_ZONE = 'Asia/Shanghai';
+
+function beijingNow(ms: number) {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: BACKUP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short',
+	}).formatToParts(new Date(ms));
+	const get = (t: string) => parts.find((p) => p.type === t)?.value || '';
+	const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+	return {
+		dateStr: `${get('year')}-${get('month')}-${get('day')}`,
+		hour: parseInt(get('hour'), 10),
+		minute: parseInt(get('minute'), 10),
+		weekday: dayMap[get('weekday')] ?? 0,
+	};
+}
+
+function basicAuthHeader(user: string, pass: string) {
+	const raw = new TextEncoder().encode(user + ':' + pass);
+	let bin = '';
+	raw.forEach((b) => { bin += String.fromCharCode(b); });
+	return 'Basic ' + btoa(bin);
+}
+
+async function runDueWebdavBackups(env: AppEnv) {
+	let rows: { key: string; value: string }[] = [];
+	try {
+		rows = (await env.DB.prepare(`SELECT key, value FROM app_meta WHERE key LIKE 'webdav_backup_config:%'`).all<{ key: string; value: string }>()).results ?? [];
+	} catch { return; }
+
+	for (const row of rows) {
+		let cfg: { enabled?: boolean; days?: number[]; time?: string; keepCount?: number; url?: string; user?: string; pass?: string; lastSlot?: string; lastBackup?: number };
+		try { cfg = JSON.parse(row.value); } catch { continue; }
+		if (!cfg.enabled || !cfg.url || !/^https?:\/\//i.test(cfg.url)) continue;
+
+		const now = beijingNow(Date.now());
+		const days = Array.isArray(cfg.days) && cfg.days.length ? cfg.days : [1, 2, 3, 4, 5];
+		if (!days.includes(now.weekday)) continue;
+		const [th, tm] = (cfg.time || '03:00').split(':').map((n) => parseInt(n, 10) || 0);
+		const nowMin = now.hour * 60 + now.minute;
+		const targetMin = th * 60 + tm;
+		if (nowMin < targetMin || nowMin >= targetMin + 5) continue;
+
+		const slotKey = `${now.dateStr} ${targetMin}`;
+		if (cfg.lastSlot === slotKey) continue; // already ran in this slot
+
+		try {
+			await performWebdavBackup(env, row.key.slice('webdav_backup_config:'.length), cfg);
+			cfg.lastSlot = slotKey;
+			cfg.lastBackup = Date.now();
+			await setMeta(env, row.key, JSON.stringify(cfg));
+		} catch { /* try again on the next tick */ }
+	}
+}
+
+async function webdavFetch(cfg: { url: string; user?: string; pass?: string }, path: string, method: string, body?: string, contentType?: string, depth?: string) {
+	const url = cfg.url.replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
+	const headers: Record<string, string> = {};
+	if (cfg.user || cfg.pass) headers['Authorization'] = basicAuthHeader(cfg.user || '', cfg.pass || '');
+	if (contentType) headers['Content-Type'] = contentType;
+	if (depth) headers['Depth'] = depth;
+	return fetch(url, { method, headers, body: ['GET', 'HEAD', 'OPTIONS'].includes(method) ? undefined : body });
+}
+
+async function performWebdavBackup(env: AppEnv, vaultId: string, cfg: { url: string; user?: string; pass?: string; keepCount?: number }) {
+	const notes = await env.DB.prepare(
+		`SELECT id, title, content, created_at, updated_at, is_pinned FROM notes
+		 WHERE vault_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1000`
+	).bind(vaultId).all<{ id: string; title: string; content: string; created_at: number; updated_at: number; is_pinned: number }>();
+	const tags = await env.DB.prepare(`SELECT name, color FROM tags WHERE vault_id = ?`).bind(vaultId).all<{ name: string; color: string }>();
+	const rels = await env.DB.prepare(
+		`SELECT nt.note_id, t.name FROM note_tags nt
+		 JOIN tags t ON t.id = nt.tag_id JOIN notes n ON n.id = nt.note_id
+		 WHERE n.vault_id = ?`
+	).bind(vaultId).all<{ note_id: string; name: string }>();
+
+	const tagNamesByNote = new Map<string, string[]>();
+	for (const r of rels.results ?? []) {
+		if (!tagNamesByNote.has(r.note_id)) tagNamesByNote.set(r.note_id, []);
+		tagNamesByNote.get(r.note_id)!.push(r.name);
+	}
+
+	const backup = {
+		version: 1,
+		app: 'edge-notes',
+		exported_at: Date.now(),
+		notes: (notes.results ?? []).map((n) => ({
+			id: n.id, title: n.title, content: n.content,
+			created_at: n.created_at, updated_at: n.updated_at,
+			is_pinned: n.is_pinned || 0, tag_names: tagNamesByNote.get(n.id) ?? [],
+		})),
+		tags: tags.results ?? [],
+	};
+	const json = JSON.stringify(backup, null, 2);
+
+	// Beijing-time filename, same format the browser backups use
+	const now = beijingNow(Date.now());
+	const hh = String(now.hour).padStart(2, '0');
+	const mm = String(now.minute).padStart(2, '0');
+	const fname = `edge-notes/backup-${now.dateStr}-${hh}${mm}.json`;
+
+	// Ensure the collection exists (some servers 409 otherwise), then upload
+	await webdavFetch(cfg, 'edge-notes/', 'MKCOL').catch(() => {});
+	const put = await webdavFetch(cfg, fname, 'PUT', json, 'application/json');
+	if (!put.ok) throw new Error('webdav PUT failed: ' + put.status);
+
+	// Keep only the newest N backups, and remove the legacy latest.json pointer
+	const keep = cfg.keepCount || 7;
+	await webdavFetch(cfg, 'edge-notes/backup-latest.json', 'DELETE').catch(() => {});
+	try {
+		const pf = await webdavFetch(cfg, 'edge-notes/', 'PROPFIND', undefined, undefined, '1');
+		const text = await pf.text();
+		const files = [...new Set(text.match(/backup-[A-Za-z0-9._-]*\.json/gi) ?? [])]
+			.filter((n) => n.toLowerCase() !== 'backup-latest.json')
+			.sort()
+			.reverse();
+		for (let i = keep; i < files.length; i++) {
+			await webdavFetch(cfg, 'edge-notes/' + files[i], 'DELETE').catch(() => {});
+		}
+	} catch { /* cleanup is best-effort */ }
+}
