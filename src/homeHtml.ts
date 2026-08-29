@@ -578,6 +578,23 @@ export const blogHomeHtml = `<!doctype html>
       .import-preview { font-size: 13px; line-height: 1.8; }
       .import-preview .import-stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
       .import-preview .import-stat:last-child { border-bottom: none; }
+      .backup-file-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+      .backup-file-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px; border: 1px solid var(--panel-border); border-radius: 10px;
+        cursor: pointer; transition: border-color 0.15s, background 0.15s;
+        background: var(--panel);
+      }
+      .backup-file-item:hover { border-color: var(--accent); background: var(--highlight-bg); }
+      .backup-file-item .bf-icon { font-size: 16px; flex-shrink: 0; }
+      .backup-file-item .bf-main { flex: 1; min-width: 0; }
+      .backup-file-item .bf-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+      .backup-file-item .bf-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .backup-file-item .bf-badge {
+        font-size: 10px; font-weight: 700; color: var(--primary);
+        background: var(--highlight-bg); border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+      }
+      .backup-file-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
 
       /* Toggle switch */
       .toggle { position: relative; display: inline-block; width: 48px; height: 26px; cursor: pointer; }
@@ -910,6 +927,21 @@ export const blogHomeHtml = `<!doctype html>
 
         <div id="statusLine" class="status-line"></div>
 
+        <!-- WebDAV Backup File List Modal -->
+        <div id="backupListModal" class="modal-backdrop hidden">
+          <div class="card import-dialog">
+            <div class="section-head">
+              <h2 class="section-title">选择要恢复的备份</h2>
+              <button id="closeBackupListBtn" class="btn secondary small">关闭</button>
+            </div>
+            <p class="muted" style="margin:0 0 10px;">恢复会把所选备份中的笔记追加到当前账户，不会覆盖现有笔记。</p>
+            <div id="backupFileList" class="backup-file-list"></div>
+            <div style="margin-top:12px;">
+              <button id="refreshBackupListBtn" class="btn secondary small">🔄 刷新列表</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Import Preview Modal -->
         <div id="importModal" class="modal-backdrop hidden">
           <div class="card import-dialog">
@@ -1033,6 +1065,10 @@ export const blogHomeHtml = `<!doctype html>
         importFileInput: document.getElementById('importFileInput'),
         backupInfo: document.getElementById('backupInfo'),
         importModal: document.getElementById('importModal'),
+        backupListModal: document.getElementById('backupListModal'),
+        backupFileList: document.getElementById('backupFileList'),
+        closeBackupListBtn: document.getElementById('closeBackupListBtn'),
+        refreshBackupListBtn: document.getElementById('refreshBackupListBtn'),
         closeImportModalBtn: document.getElementById('closeImportModalBtn'),
         importPreview: document.getElementById('importPreview'),
         confirmImportBtn: document.getElementById('confirmImportBtn'),
@@ -2009,22 +2045,90 @@ export const blogHomeHtml = `<!doctype html>
       }
 
       async function restoreFromWebdav() {
-        if (!confirm('从 WebDAV 恢复将追加笔记到当前账户，不会覆盖现有笔记。确定继续？')) return;
-        els.webdavRestoreBtn.disabled = true;
-        els.webdavRestoreBtn.textContent = '恢复中…';
+        openBackupList();
+      }
+
+      // ─── Backup file picker ───────────────
+      let currentBackupFiles = [];
+
+      // Parse PROPFIND XML into backup file entries (namespace prefix varies by server)
+      function parseBackupFiles(xml) {
+        const files = [];
+        const blocks = xml.split(/<\\\/[\\w.-]*:?response>/i);
+        blocks.forEach(function (block) {
+          const href = (block.match(/<[\\w.-]*:?href>([^<]+)<\\\//i) || [])[1];
+          if (!href) return;
+          const name = decodeURIComponent(href.split('/').pop() || '');
+          if (name.indexOf('backup-') !== 0 || name.indexOf('.json') < 0) return;
+          const size = parseInt((block.match(/<[\\w.-]*:?getcontentlength>(\\d+)<\\\//i) || [])[1] || '0', 10);
+          const lm = (block.match(/<[\\w.-]*:?getlastmodified>([^<]+)<\\\//i) || [])[1] || '';
+          let ts = Date.parse(lm);
+          if (isNaN(ts)) {
+            const m = name.match(/backup-(\\d{4})-(\\d{2})-(\\d{2})-(\\d{2})(\\d{2})\\.json/);
+            if (m) ts = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+          }
+          files.push({ name: name, size: size, modified: isNaN(ts) ? 0 : ts, isLatest: name === 'backup-latest.json' });
+        });
+        files.sort(function (a, b) { return b.modified - a.modified; });
+        return files;
+      }
+
+      function formatBytes(n) {
+        if (!n) return '';
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+        return (n / 1024 / 1024).toFixed(2) + ' MB';
+      }
+
+      async function openBackupList() {
+        els.backupListModal.classList.remove('hidden');
+        els.backupFileList.innerHTML = '<div class="backup-file-empty">加载备份列表中…</div>';
         try {
-          const res = await webdavRequest('edge-notes/backup-latest.json', 'GET');
-          const data = await res.json();
-          showImportPreview(data);
+          const res = await webdavProxy('PROPFIND', webdavBaseUrl() + '/edge-notes/', undefined, { depth: '1' });
+          if (res.status < 200 || res.status >= 300) {
+            if (res.status === 404) throw new Error('服务器上还没有备份目录（先备份一次即可创建）');
+            throw new Error('读取备份列表失败 (' + res.status + ')');
+          }
+          currentBackupFiles = parseBackupFiles(res.body || '');
+          renderBackupFileList(currentBackupFiles);
         } catch (e) {
-          setStatus('恢复失败: ' + e.message);
-        } finally {
-          els.webdavRestoreBtn.disabled = false;
-          els.webdavRestoreBtn.textContent = '📥 从 WebDAV 恢复';
+          els.backupFileList.innerHTML = '<div class="backup-file-empty">' + escapeHtml(e.message || '读取失败') + '</div>';
         }
       }
 
-      function showImportPreview(data) {
+      function renderBackupFileList(files) {
+        els.backupFileList.innerHTML = '';
+        if (!files.length) {
+          els.backupFileList.innerHTML = '<div class="backup-file-empty">备份目录里还没有备份文件，先执行一次"备份到 WebDAV"</div>';
+          return;
+        }
+        files.forEach(function (f) {
+          const row = document.createElement('div');
+          row.className = 'backup-file-item';
+          const when = f.modified ? new Date(f.modified).toLocaleString('zh-CN') : '';
+          row.innerHTML = '<span class="bf-icon">📄</span>'
+            + '<div class="bf-main"><div class="bf-name">' + escapeHtml(f.name) + '</div>'
+            + '<div class="bf-meta">' + (when ? when : '时间未知') + (f.size ? ' · ' + formatBytes(f.size) : '') + '</div></div>'
+            + (f.isLatest ? '<span class="bf-badge">最新</span>' : '');
+          row.onclick = function () { chooseBackupFile(f.name); };
+          els.backupFileList.appendChild(row);
+        });
+      }
+
+      async function chooseBackupFile(name) {
+        els.backupFileList.innerHTML = '<div class="backup-file-empty">正在读取 ' + escapeHtml(name) + ' …</div>';
+        try {
+          const res = await webdavRequest('edge-notes/' + name, 'GET');
+          const data = await res.json();
+          els.backupListModal.classList.add('hidden');
+          showImportPreview(data, name);
+        } catch (e) {
+          setStatus('读取备份失败: ' + (e.message || ''));
+          renderBackupFileList(currentBackupFiles);
+        }
+      }
+
+      function showImportPreview(data, fileName) {
         if (!data || !Array.isArray(data.notes)) {
           setStatus('无效的备份文件');
           return;
@@ -2035,6 +2139,7 @@ export const blogHomeHtml = `<!doctype html>
         const app = data.app || 'unknown';
         els.importPreview.innerHTML =
           '<div class="import-stat"><span>来源应用</span><span>' + escapeHtml(app) + '</span></div>' +
+          (fileName ? '<div class="import-stat"><span>备份文件</span><span>' + escapeHtml(fileName) + '</span></div>' : '') +
           '<div class="import-stat"><span>备份时间</span><span>' + backupDate + '</span></div>' +
           '<div class="import-stat"><span>笔记数量</span><span>' + noteCount + ' 条</span></div>' +
           '<div class="import-stat"><span>标签数量</span><span>' + tagCount + ' 个</span></div>';
@@ -2511,6 +2616,8 @@ export const blogHomeHtml = `<!doctype html>
         els.importFileInput.value = '';
       };
       els.closeImportModalBtn.onclick = function () { els.importModal.classList.add('hidden'); };
+      els.closeBackupListBtn.onclick = function () { els.backupListModal.classList.add('hidden'); };
+      els.refreshBackupListBtn.onclick = function () { openBackupList(); };
       els.confirmImportBtn.onclick = function () { confirmImport(); };
 
       // Export buttons in settings
@@ -2541,6 +2648,7 @@ export const blogHomeHtml = `<!doctype html>
 
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
+          if (!els.backupListModal.classList.contains('hidden')) { els.backupListModal.classList.add('hidden'); return; }
           if (!els.importModal.classList.contains('hidden')) { els.importModal.classList.add('hidden'); return; }
           if (!els.shareModal.classList.contains('hidden')) { closeShareDialog(); return; }
           if (els.editorPanel.classList.contains('open')) { closeComposer(); return; }
