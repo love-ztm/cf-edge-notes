@@ -183,7 +183,8 @@ export const blogHomeHtml = `<!doctype html>
       .content-body {
         flex: 1; overflow-y: auto; padding: 16px 20px;
       }
-      .feed { padding: 0; }
+      .feed { padding: 0; max-width: 880px; }
+      @media (min-width: 1000px) { .feed { margin: 0 auto; } }
       .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
       .section-title { margin: 0; font-size: 16px; font-weight: 700; }
       .section-desc { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
@@ -445,13 +446,17 @@ export const blogHomeHtml = `<!doctype html>
       .clear-search.show { opacity: 1; pointer-events: auto; }
       .status-line {
         position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-        padding: 8px 18px; border-radius: 999px;
-        background: var(--panel); border: 1px solid var(--panel-border);
-        box-shadow: var(--shadow); font-size: 13px; color: var(--muted);
-        opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        padding: 9px 20px; border-radius: 999px;
+        background: color-mix(in srgb, var(--panel) 82%, transparent);
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        border: 1px solid var(--panel-border);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.16); font-size: 13px; color: var(--muted);
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        transform: translateX(-50%) translateY(8px);
         z-index: 50; white-space: nowrap;
       }
-      .status-line.show { opacity: 1; }
+      .status-line.show { opacity: 1; transform: translateX(-50%) translateY(0); }
       .vault-panel { padding: 24px; margin-bottom: 16px; }
       .vault-panel-title { margin: 0 0 8px; font-size: 18px; }
       .vault-panel-desc { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
@@ -463,40 +468,72 @@ export const blogHomeHtml = `<!doctype html>
       .section-desc { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
       .muted { color: var(--muted); font-size: 13px; }
       .note-list { display: flex; flex-direction: column; gap: 8px; }
-      .group-block { margin-bottom: 8px; }
+      .group-block { margin-bottom: 10px; }
       .group-title {
-        font-size: 12px; font-weight: 700; color: var(--muted);
-        text-transform: uppercase; letter-spacing: 0.5px;
-        padding: 8px 0 4px; border-bottom: 1px solid var(--panel-border);
-        margin-bottom: 8px;
+        display: flex; align-items: center; gap: 10px;
+        font-size: 11px; font-weight: 700; color: var(--muted);
+        text-transform: uppercase; letter-spacing: 1px;
+        padding: 10px 2px 8px; margin-bottom: 8px;
       }
+      .group-title::after { content: ''; flex: 1; height: 1px; background: var(--panel-border); opacity: 0.7; }
+      @keyframes cardIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
       .note-card {
-        padding: 14px; border-radius: 12px;
+        padding: 14px 16px; border-radius: 14px;
         border: 1px solid var(--panel-border); background: var(--panel);
-        transition: all 0.15s; cursor: default;
+        transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+        cursor: default;
         box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        animation: cardIn 0.28s ease both;
       }
-      .note-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(99,102,241,0.08); }
-      .note-card.is-pinned { border-color: var(--pin-border); background: var(--pin-bg); }
-      .note-card-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-      .note-card-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
-      .note-card-text { font-size: 13px; color: var(--muted); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-      .note-card-text.is-empty { font-style: italic; }
-      .note-card-text-wrap.collapsed { max-height: 120px; overflow: hidden; position: relative; }
-      .note-card-text-wrap.collapsed::after {
-        content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
-        background: linear-gradient(transparent, var(--panel));
+      .note-card:hover {
+        border-color: color-mix(in srgb, var(--primary) 45%, var(--panel-border));
+        box-shadow: 0 6px 18px rgba(99,102,241,0.10);
+        transform: translateY(-1px);
       }
-      .note-expand { margin-top: 8px; }
-      .note-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-      .note-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+      .note-card.is-pinned { box-shadow: inset 3px 0 0 var(--pin-border), 0 1px 3px rgba(0,0,0,0.04); }
+      .note-card.is-pinned:hover { box-shadow: inset 3px 0 0 var(--pin-border), 0 6px 18px rgba(99,102,241,0.10); }
+      .note-card-head { display: flex; align-items: flex-start; gap: 8px; }
+      .note-card-head .note-card-title { flex: 1; min-width: 0; }
+      .note-card-meta-text { font-size: 11px; color: var(--muted); white-space: nowrap; }
+      .note-card-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; line-height: 1.4; overflow-wrap: anywhere; }
+      .note-card-text { font-size: 13px; color: var(--muted); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+      .note-card-text.is-empty { font-style: italic; opacity: 0.7; }
+      .note-card-text-wrap.collapsed .note-card-text {
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .note-expand {
+        margin-top: 8px; background: none; border: none; color: var(--primary);
+        font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 0;
+      }
+      .note-expand:hover { opacity: 0.8; }
+      .note-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+      .note-card-foot:empty { display: none; }
+      .note-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+      .note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; }
+      @media (hover: none) { .note-actions { opacity: 1; } }
+      .icon-btn {
+        width: 27px; height: 27px; display: inline-flex; align-items: center; justify-content: center;
+        border: none; border-radius: 8px; background: none; cursor: pointer;
+        font-size: 13px; color: var(--muted); transition: background 0.12s, color 0.12s;
+        text-decoration: none; line-height: 1; padding: 0;
+      }
+      .icon-btn:hover { background: var(--highlight-bg); color: var(--text); }
+      .icon-btn.danger:hover { background: color-mix(in srgb, #ef4444 14%, transparent); color: #ef4444; }
+      .note-tags { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
       .tag-pill {
-        display: inline-flex; align-items: center; gap: 3px;
-        padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 2.5px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
         background: var(--tag-bg); color: var(--tag-text);
+        border: 1px solid var(--panel-border);
       }
       .tag-pill .tag-dot { width: 6px; height: 6px; border-radius: 50%; }
-      .empty-feed { padding: 32px; text-align: center; color: var(--muted); border: 1px dashed var(--panel-border); border-radius: 14px; }
+      .empty-feed {
+        padding: 52px 32px; text-align: center; color: var(--muted);
+        border: 1px dashed var(--panel-border); border-radius: 16px;
+      }
+      .empty-feed .empty-icon { font-size: 38px; display: block; margin-bottom: 10px; opacity: 0.75; }
+      .empty-feed .empty-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+      .empty-feed .empty-hint { font-size: 12.5px; }
       .modal-backdrop {
         position: fixed; inset: 0; z-index: 30;
         background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
@@ -611,14 +648,22 @@ export const blogHomeHtml = `<!doctype html>
       }
       .mobile-bottom-bar { display: none; }
       @media (max-width: 640px) {
-        .note-actions { gap: 4px; }
-        .note-actions .btn { padding: 6px 10px; font-size: 11px; }
+        .note-actions { gap: 0; }
+        .icon-btn { width: 32px; height: 32px; font-size: 14px; }
         /* Login mobile */
         .login-content { padding: 0 20px; }
         .login-title { font-size: 36px !important; }
         .login-subtitle { font-size: 18px !important; }
         .login-form { max-width: 100%; }
       }
+      /* Thin, theme-aware scrollbars */
+      ::-webkit-scrollbar { width: 9px; height: 9px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--muted) 28%, transparent);
+        border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+      }
+      ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 45%, transparent); border: 2px solid transparent; background-clip: padding-box; }
     </style>
   </head>
   <body>
@@ -1462,12 +1507,14 @@ export const blogHomeHtml = `<!doctype html>
 
         if (!state.vaultUnlocked) {
           els.noteCount.textContent = state.noteCountMeta ? ('共 ' + state.noteCountMeta + ' 条（已加密）') : '0 条';
-          els.noteList.innerHTML = '<div class="empty-feed">正文已加密。请先输入解锁密码。</div>';
+          els.noteList.innerHTML = '<div class="empty-feed"><span class="empty-icon">🔒</span><div class="empty-title">正文已加密</div><div class="empty-hint">请先输入解锁密码查看笔记内容</div></div>';
           return;
         }
 
         if (!state.notes.length) {
-          els.noteList.innerHTML = '<div class="empty-feed">没有笔记' + (state.activeTagFilter ? '匹配当前标签' : '') + '。点击"新建笔记"开始写吧。</div>';
+          els.noteList.innerHTML = '<div class="empty-feed"><span class="empty-icon">🗒️</span><div class="empty-title">没有笔记'
+            + (state.activeTagFilter ? '匹配当前标签' : '')
+            + '</div><div class="empty-hint">点击右上角"＋ 新建笔记"，写下第一笔</div></div>';
           return;
         }
 
@@ -1490,61 +1537,45 @@ export const blogHomeHtml = `<!doctype html>
             const card = document.createElement('article');
             card.className = 'note-card' + (note.is_pinned ? ' is-pinned' : '');
 
-            const meta = document.createElement('div');
-            meta.className = 'note-card-meta';
-            meta.innerHTML = '<span>' + (note.is_pinned ? '📌 ' : '') + formatDate(note.updated_at) + '</span><span>' + wordCount(note.content) + ' 字</span>';
+            const head = document.createElement('div');
+            head.className = 'note-card-head';
 
             const title = document.createElement('div');
             title.className = 'note-card-title';
-            title.innerHTML = highlightText(note.title || '无标题', els.searchInput.value.trim());
+            title.innerHTML = (note.is_pinned ? '<span title="置顶">📌</span> ' : '') + highlightText(note.title || '无标题', els.searchInput.value.trim());
 
             const actions = document.createElement('div');
             actions.className = 'note-actions';
 
-            const pinBtn = document.createElement('button');
-            pinBtn.type = 'button';
-            pinBtn.className = 'btn secondary small';
-            pinBtn.textContent = note.is_pinned ? '取消置顶' : '📌 置顶';
-            pinBtn.onclick = async function () {
+            function iconBtn(icon, label, cls, onclick) {
+              const b = document.createElement('button');
+              b.type = 'button';
+              b.className = 'icon-btn' + (cls ? ' ' + cls : '');
+              b.textContent = icon;
+              b.title = label;
+              b.setAttribute('aria-label', label);
+              b.onclick = onclick;
+              return b;
+            }
+
+            const pinBtn = iconBtn('📌', note.is_pinned ? '取消置顶' : '置顶', '', async function () {
               await api('/api/notes/' + encodeURIComponent(note.id) + '/pin', { method: 'PUT' });
               await refreshNotes();
               setStatus(note.is_pinned ? '已取消置顶' : '已置顶');
-            };
+            });
 
-            const copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'btn secondary small';
-            copyBtn.textContent = '复制';
-            copyBtn.onclick = async function () {
+            const copyBtn = iconBtn('📋', '复制', '', async function () {
               try { await navigator.clipboard.writeText(note.content || ''); setStatus('已复制：' + (note.title || '无标题')); }
               catch (e) { setStatus('复制失败'); }
-            };
+            });
 
-            const editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.className = 'btn secondary small';
-            editBtn.textContent = '编辑';
-            editBtn.onclick = function () { openComposer(note); };
+            const editBtn = iconBtn('✏️', '编辑', '', function () { openComposer(note); });
 
-            const shareBtn = document.createElement('button');
-            shareBtn.type = 'button';
-            shareBtn.className = 'btn secondary small';
-            shareBtn.textContent = '🔗';
-            shareBtn.title = '分享';
-            shareBtn.onclick = function () { openShareDialog(note.id); };
+            const shareBtn = iconBtn('🔗', '分享', '', function () { openShareDialog(note.id); });
 
-            const exportBtn = document.createElement('button');
-            exportBtn.type = 'button';
-            exportBtn.className = 'btn secondary small';
-            exportBtn.textContent = '📤';
-            exportBtn.title = '导出 Markdown';
-            exportBtn.onclick = function () { exportSingleNote(note); };
+            const exportBtn = iconBtn('📤', '导出 Markdown', '', function () { exportSingleNote(note); });
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.type = 'button';
-            deleteBtn.className = 'btn danger small';
-            deleteBtn.textContent = '删除';
-            deleteBtn.onclick = function () { deleteNote(note.id).catch(function (e) { setStatus(e.message || '删除失败'); }); };
+            const deleteBtn = iconBtn('🗑', '删除', 'danger', function () { deleteNote(note.id).catch(function (e) { setStatus(e.message || '删除失败'); }); });
 
             actions.appendChild(pinBtn);
             actions.appendChild(copyBtn);
@@ -1553,6 +1584,10 @@ export const blogHomeHtml = `<!doctype html>
             actions.appendChild(exportBtn);
             actions.appendChild(deleteBtn);
 
+            head.appendChild(title);
+            head.appendChild(actions);
+            card.appendChild(head);
+
             const body = document.createElement('div');
             const dc = getDisplayContent(note);
             body.className = 'note-card-text' + (note.content ? '' : ' is-empty');
@@ -1560,11 +1595,23 @@ export const blogHomeHtml = `<!doctype html>
             const bodyWrap = document.createElement('div');
             bodyWrap.className = 'note-card-text-wrap' + (dc.canExpand && !dc.expanded ? ' collapsed' : '');
             bodyWrap.appendChild(body);
+            card.appendChild(bodyWrap);
 
-            card.appendChild(meta);
-            card.appendChild(actions);
-            card.appendChild(title);
+            if (dc.canExpand) {
+              const toggleBtn = document.createElement('button');
+              toggleBtn.type = 'button';
+              toggleBtn.className = 'note-expand';
+              toggleBtn.textContent = dc.expanded ? '收起' : '展开全文';
+              toggleBtn.onclick = function () {
+                if (state.expandedIds.has(note.id)) state.expandedIds.delete(note.id);
+                else state.expandedIds.add(note.id);
+                renderList();
+              };
+              card.appendChild(toggleBtn);
+            }
 
+            const foot = document.createElement('div');
+            foot.className = 'note-card-foot';
             if (note.tags && note.tags.length) {
               const tagsRow = document.createElement('div');
               tagsRow.className = 'note-tags';
@@ -1574,23 +1621,13 @@ export const blogHomeHtml = `<!doctype html>
                 pill.innerHTML = '<span class="tag-dot" style="background:' + escapeHtml(t.color) + '"></span>' + escapeHtml(t.name);
                 tagsRow.appendChild(pill);
               });
-              card.appendChild(tagsRow);
+              foot.appendChild(tagsRow);
             }
-
-            card.appendChild(bodyWrap);
-
-            if (dc.canExpand) {
-              const toggleBtn = document.createElement('button');
-              toggleBtn.type = 'button';
-              toggleBtn.className = 'btn secondary note-expand';
-              toggleBtn.textContent = dc.expanded ? '收起' : '展开全文';
-              toggleBtn.onclick = function () {
-                if (state.expandedIds.has(note.id)) state.expandedIds.delete(note.id);
-                else state.expandedIds.add(note.id);
-                renderList();
-              };
-              card.appendChild(toggleBtn);
-            }
+            const metaText = document.createElement('span');
+            metaText.className = 'note-card-meta-text';
+            metaText.textContent = formatDate(note.updated_at) + ' · ' + wordCount(note.content) + ' 字';
+            foot.appendChild(metaText);
+            card.appendChild(foot);
 
             group.appendChild(card);
           });
@@ -1601,16 +1638,15 @@ export const blogHomeHtml = `<!doctype html>
       function renderTrashList(notes) {
         els.trashList.innerHTML = '';
         if (!notes.length) {
-          els.trashList.innerHTML = '<div class="empty-feed">回收站是空的。</div>';
+          els.trashList.innerHTML = '<div class="empty-feed"><span class="empty-icon">🗑️</span><div class="empty-title">回收站是空的</div><div class="empty-hint">删除的笔记会在这里保留 30 天</div></div>';
           return;
         }
         notes.forEach(function (note) {
           const card = document.createElement('article');
           card.className = 'note-card';
-          card.style.opacity = '0.7';
-          const meta = document.createElement('div');
-          meta.className = 'note-card-meta';
-          meta.innerHTML = '<span>删除于 ' + formatDate(note.deleted_at) + '</span><span>' + wordCount(note.content) + ' 字</span>';
+          card.style.opacity = '0.75';
+          const head = document.createElement('div');
+          head.className = 'note-card-head';
           const title = document.createElement('div');
           title.className = 'note-card-title';
           title.textContent = note.title || '无标题';
@@ -1618,8 +1654,10 @@ export const blogHomeHtml = `<!doctype html>
           actions.className = 'note-actions';
           const restoreBtn = document.createElement('button');
           restoreBtn.type = 'button';
-          restoreBtn.className = 'btn secondary small';
-          restoreBtn.textContent = '恢复';
+          restoreBtn.className = 'icon-btn';
+          restoreBtn.textContent = '♻️';
+          restoreBtn.title = '恢复';
+          restoreBtn.setAttribute('aria-label', '恢复');
           restoreBtn.onclick = async function () {
             await api('/api/notes/' + encodeURIComponent(note.id) + '/restore', { method: 'POST' });
             setStatus('已恢复');
@@ -1629,8 +1667,10 @@ export const blogHomeHtml = `<!doctype html>
           };
           const permBtn = document.createElement('button');
           permBtn.type = 'button';
-          permBtn.className = 'btn danger small';
-          permBtn.textContent = '永久删除';
+          permBtn.className = 'icon-btn danger';
+          permBtn.textContent = '🗑';
+          permBtn.title = '永久删除';
+          permBtn.setAttribute('aria-label', '永久删除');
           permBtn.onclick = async function () {
             if (!confirm('永久删除此笔记？此操作不可恢复！')) return;
             await api('/api/notes/' + encodeURIComponent(note.id) + '/permanent', { method: 'DELETE' });
@@ -1641,9 +1681,16 @@ export const blogHomeHtml = `<!doctype html>
           };
           actions.appendChild(restoreBtn);
           actions.appendChild(permBtn);
-          card.appendChild(meta);
-          card.appendChild(actions);
-          card.appendChild(title);
+          head.appendChild(title);
+          head.appendChild(actions);
+          card.appendChild(head);
+          const foot = document.createElement('div');
+          foot.className = 'note-card-foot';
+          const metaText = document.createElement('span');
+          metaText.className = 'note-card-meta-text';
+          metaText.textContent = '删除于 ' + formatDate(note.deleted_at) + ' · ' + wordCount(note.content) + ' 字';
+          foot.appendChild(metaText);
+          card.appendChild(foot);
           els.trashList.appendChild(card);
         });
       }
