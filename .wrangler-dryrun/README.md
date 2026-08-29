@@ -1,1 +1,0 @@
-This folder contains the built output assets for the worker "cf-notes" generated at 2026-08-29T10:31:05.439Z.
