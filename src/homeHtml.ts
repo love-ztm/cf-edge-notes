@@ -2029,8 +2029,9 @@ export const blogHomeHtml = `<!doctype html>
           const now = new Date();
           const fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
           await webdavRequest(fname, 'PUT', json, 'application/json');
-          // Also update latest for easy restore
-          await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
+          // One file per backup. Remove the legacy backup-latest.json pointer
+          // written by older versions (restore now uses the file picker).
+          webdavRequest('edge-notes/backup-latest.json', 'DELETE').catch(function () {});
           const cfg = getWebdavConfig();
           cfg.lastBackup = Date.now();
           saveWebdavConfig(cfg);
@@ -2268,6 +2269,8 @@ export const blogHomeHtml = `<!doctype html>
 
       async function cleanupOldBackups(keepCount) {
         try {
+          // Remove the legacy backup-latest.json pointer (old versions wrote it on every backup)
+          try { await webdavRequest('edge-notes/backup-latest.json', 'DELETE'); } catch (e) { /* ignore */ }
           var res = await webdavProxy('PROPFIND', webdavBaseUrl() + '/edge-notes/', undefined, { depth: '1' });
           if (res.status < 200 || res.status >= 300) return;
           var text = res.body || '';
@@ -2278,7 +2281,6 @@ export const blogHomeHtml = `<!doctype html>
           var m;
           while ((m = re.exec(text)) !== null) {
             var name = m[0];
-            // never clean up the latest.json pointer
             if (name.indexOf('backup-') === 0 && name !== 'backup-latest.json' && !seen[name]) {
               seen[name] = 1;
               files.push(name);
@@ -2305,13 +2307,11 @@ export const blogHomeHtml = `<!doctype html>
               var data = await buildBackupData();
               var json = JSON.stringify(data, null, 2);
               await ensureBackupDir();
-              // Save with date-time filename
+              // Save with date-time filename (one file per backup)
               var now = new Date();
               var fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
               await webdavRequest(fname, 'PUT', json, 'application/json');
-              // Also update backup-latest.json for easy restore
-              await webdavRequest('edge-notes/backup-latest.json', 'PUT', json, 'application/json');
-              // Cleanup old backups
+              // Cleanup old backups (also removes the legacy backup-latest.json)
               await cleanupOldBackups(c.keepCount || 7);
               c.lastBackup = Date.now();
               saveAutoBackupConfig(c);
