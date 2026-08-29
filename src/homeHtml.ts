@@ -1894,70 +1894,86 @@ export const blogHomeHtml = `<!doctype html>
           els.backupInfo.textContent = '尚未备份过';
         }
       }
-      function webdavAuth(user, pass) {
-        return 'Basic ' + btoa(unescape(encodeURIComponent(user + ':' + pass)));
+      // Relay a WebDAV call through our Worker (browsers cannot call third-party
+      // WebDAV directly: PROPFIND/PUT get no CORS headers from most providers)
+      async function webdavProxy(method, url, body, opts) {
+        opts = opts || {};
+        const cfg = getWebdavConfig();
+        const data = await api('/api/webdav/proxy', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            url: url, method: method, body: body,
+            contentType: opts.contentType, depth: opts.depth,
+            user: cfg.user || '', pass: cfg.pass || ''
+          })
+        });
+        return data;
       }
-      async function webdavRequest(path, method, body, contentType) {
+
+      function webdavBaseUrl() {
         const cfg = getWebdavConfig();
         if (!cfg.url) throw new Error('请先配置 WebDAV 服务器地址');
-        const baseUrl = cfg.url.replace(/\\/+$/, '');
-        const url = baseUrl + '/' + path.replace(/^\\/+/, '');
-        const headers = { 'Authorization': webdavAuth(cfg.user || '', cfg.pass || '') };
-        if (contentType) headers['Content-Type'] = contentType;
-        const opts = { method, headers };
-        if (body !== undefined) opts.body = body;
-        const res = await fetch(url, opts);
-        if (!res.ok) {
-          const text = await res.text().catch(function () { return ''; });
-          throw new Error('WebDAV 请求失败 (' + res.status + '): ' + (text.slice(0, 100) || res.statusText));
-        }
-        return res;
+        return cfg.url.replace(/\\/+$/, '');
       }
+
+      // Response-like shim so callers can keep using res.ok / res.text() / res.json()
+      function proxyResponse(data) {
+        return {
+          ok: !!data.ok, status: data.status, statusText: data.statusText,
+          text: async function () { return data.body || ''; },
+          json: async function () { return JSON.parse(data.body || 'null'); }
+        };
+      }
+
+      async function webdavRequest(path, method, body, contentType) {
+        const url = webdavBaseUrl() + '/' + path.replace(/^\\/+/, '');
+        const data = await webdavProxy(method, url, body, { contentType: contentType });
+        if (!data.ok) {
+          if (data.status === 0) throw new Error('无法连接 WebDAV 服务器，请检查地址与网络');
+          throw new Error('WebDAV 请求失败 (' + data.status + '): ' + (data.body || '').slice(0, 100) || data.statusText);
+        }
+        return proxyResponse(data);
+      }
+
+      // Some WebDAV servers (wsgidav/Apache/nginx dav) return 409 when the parent
+      // collection doesn't exist, so create it once before the first backup PUT
+      let backupDirReady = false;
+      async function ensureBackupDir() {
+        if (backupDirReady) return;
+        try {
+          await webdavProxy('MKCOL', webdavBaseUrl() + '/edge-notes', undefined, {});
+        } catch (e) { /* 405 = already exists, ignore */ }
+        backupDirReady = true;
+      }
+
       async function webdavTestConnection() {
         const cfg = getWebdavConfig();
         if (!cfg.url) throw new Error('请填写服务器地址');
-        // Try PROPFIND to test connection
-        const baseUrl = cfg.url.replace(/\\/+$/, '');
-        const res = await fetch(baseUrl, {
-          method: 'PROPFIND',
-          headers: {
-            'Authorization': webdavAuth(cfg.user || '', cfg.pass || ''),
-            'Depth': '0',
-          },
-        });
-        if (!res.ok) throw new Error('连接失败 (' + res.status + '): ' + res.statusText);
+        const data = await webdavProxy('PROPFIND', cfg.url.replace(/\\/+$/, ''), undefined, { depth: '0' });
+        if (data.status < 200 || data.status >= 300) {
+          if (data.status === 0) throw new Error('无法连接服务器，请检查地址与网络');
+          throw new Error('连接失败 (' + data.status + '): ' + data.statusText);
+        }
         return true;
       }
 
-      // Build backup data (encrypted ciphertext + tags)
+      // Build backup data (encrypted ciphertext + tags; tag list already ships with each note)
       async function buildBackupData() {
         const notesData = await api('/api/notes');
         const tagsData = await api('/api/tags');
         const notes = notesData.notes || [];
         const tags = tagsData.tags || [];
-        // Build tag id -> name map
-        const tagMap = {};
-        tags.forEach(function (t) { tagMap[t.id] = t.name; });
-        // Fetch note-tag associations
-        const notesWithTags = [];
-        for (const note of notes) {
-          let tagNames = [];
-          try {
-            const rels = await api('/api/notes/' + encodeURIComponent(note.id) + '/tags');
-            if (rels.tags) {
-              tagNames = rels.tags.map(function (t) { return t.name; });
-            }
-          } catch (e) { /* ignore */ }
-          notesWithTags.push({
+        const notesWithTags = notes.map(function (note) {
+          return {
             id: note.id,
             title: note.title,
             content: note.content,
             created_at: note.created_at,
             updated_at: note.updated_at,
             is_pinned: note.is_pinned || 0,
-            tag_names: tagNames,
-          });
-        }
+            tag_names: (note.tags || []).map(function (t) { return t.name; }),
+          };
+        });
         return {
           version: 1,
           app: 'edge-notes',
@@ -1973,6 +1989,7 @@ export const blogHomeHtml = `<!doctype html>
         try {
           const data = await buildBackupData();
           const json = JSON.stringify(data, null, 2);
+          await ensureBackupDir();
           const now = new Date();
           const fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';
           await webdavRequest(fname, 'PUT', json, 'application/json');
@@ -2146,15 +2163,19 @@ export const blogHomeHtml = `<!doctype html>
 
       async function cleanupOldBackups(keepCount) {
         try {
-          var res = await webdavRequest('edge-notes/', 'PROPFIND', undefined, undefined);
-          var text = await res.text();
-          // Parse PROPFIND XML to find backup files
+          var res = await webdavProxy('PROPFIND', webdavBaseUrl() + '/edge-notes/', undefined, { depth: '1' });
+          if (res.status < 200 || res.status >= 300) return;
+          var text = res.body || '';
+          // Find backup filenames anywhere in the PROPFIND XML (namespace-agnostic)
           var files = [];
-          var re = /<d:href>([^<]*backup-[^<]*\.json)<\\/d:href>/gi;
+          var seen = {};
+          var re = /backup-[A-Za-z0-9._-]*\\.json/gi;
           var m;
           while ((m = re.exec(text)) !== null) {
-            var name = m[1].split('/').pop();
-            if (name.indexOf('backup-') === 0 && name.indexOf('.json') > 0) {
+            var name = m[0];
+            // never clean up the latest.json pointer
+            if (name.indexOf('backup-') === 0 && name !== 'backup-latest.json' && !seen[name]) {
+              seen[name] = 1;
               files.push(name);
             }
           }
@@ -2178,6 +2199,7 @@ export const blogHomeHtml = `<!doctype html>
             try {
               var data = await buildBackupData();
               var json = JSON.stringify(data, null, 2);
+              await ensureBackupDir();
               // Save with date-time filename
               var now = new Date();
               var fname = 'edge-notes/backup-' + backupDateStr(now) + '-' + backupTimeStr(now) + '.json';

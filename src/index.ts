@@ -450,6 +450,37 @@ export default {
 			return json({ ok: true, vaultSalt: await getOrCreateVaultSalt(env, vaultId), cipher: 'aes-gcm-256', kdf: 'pbkdf2-sha256', iterations: 250000, version: 1 });
 		}
 
+		// ─── WebDAV proxy ──────────────────────────────
+		// Browsers block cross-origin WebDAV calls (PROPFIND/PUT have no CORS headers on
+		// most providers), so the Worker relays them server-side.
+		if (url.pathname === '/api/webdav/proxy' && request.method === 'POST') {
+			await getAuthedVaultId(request, env);
+			const body = (await request.json().catch(() => null)) as {
+				url?: string; method?: string; body?: string; contentType?: string; depth?: string; user?: string; pass?: string;
+			} | null;
+			const target = body?.url || '';
+			const method = (body?.method || 'GET').toUpperCase();
+			if (!/^https?:\/\//i.test(target)) return json({ ok: false, status: 0, statusText: 'invalid url', body: '' });
+			const headers: Record<string, string> = {};
+			if (body?.user || body?.pass) {
+				const raw = new TextEncoder().encode((body?.user || '') + ':' + (body?.pass || ''));
+				let bin = '';
+				raw.forEach((b) => { bin += String.fromCharCode(b); });
+				headers['Authorization'] = 'Basic ' + btoa(bin);
+			}
+			if (body?.contentType) headers['Content-Type'] = body.contentType;
+			if (body?.depth) headers['Depth'] = body.depth;
+			const hasBody = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+			let res: Response;
+			try {
+				res = await fetch(target, { method, headers, body: hasBody ? body?.body : undefined });
+			} catch (e) {
+				return json({ ok: false, status: 0, statusText: '无法连接服务器', body: String(e) });
+			}
+			const text = await res.text().catch(() => '');
+			return json({ ok: res.ok, status: res.status, statusText: res.statusText, body: text.slice(0, 2_000_000) });
+		}
+
 		// ─── Notes CRUD ────────────────────────────────
 		if (url.pathname === '/api/notes' && request.method === 'GET') {
 			await ensureNotesSchema(env);
