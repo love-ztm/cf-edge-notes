@@ -895,7 +895,7 @@ async function runDueWebdavBackups(env: AppEnv) {
 		if (cfg.lastSlot === slotKey) continue; // already ran in this slot
 
 		try {
-			await performWebdavBackup(env, row.key.slice('webdav_backup_config:'.length), cfg);
+			await performWebdavBackup(env, row.key.slice('webdav_backup_config:'.length), { ...cfg, url: cfg.url });
 			cfg.lastSlot = slotKey;
 			cfg.lastBackup = Date.now();
 			await setMeta(env, row.key, JSON.stringify(cfg));
