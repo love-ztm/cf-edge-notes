@@ -33,5 +33,11 @@
         "description": "Optional extra isolated vault passwords. Format: vault_id=password,guest=another-password."
       }
     }
+  },
+  "description": "端到端加密的私人笔记应用，构建在 Cloudflare Workers + D1 + R2 之上",
+  "homepage": "https://github.com/love-ztm/cf-edge-notes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/love-ztm/cf-edge-notes.git"
   }
 }
